@@ -455,6 +455,15 @@
         <input type="file" id="imp-file-margem" accept=".csv,text/csv" style="display:none">
       </div>
     </div>
+
+    <div class="imp-section">
+      <h2>Restaurar backup completo (migração)</h2>
+      <p>Uso único: importa o backup exportado do app antigo (itens, venda casada e margens), mantendo status, aprovações, chegada e tudo mais como estava.</p>
+      <div class="imp-actions">
+        <button class="btn btn-primary" id="imp-btn-restore-backup">Importar backup (.json)</button>
+        <input type="file" id="imp-file-backup" accept=".json,application/json" style="display:none">
+      </div>
+    </div>
   </div>
 
 </div>
@@ -2231,6 +2240,60 @@
     var file=e.target.files && e.target.files[0];
     if(!file) return;
     importMargemFile(file);
+    e.target.value='';
+  });
+
+  // ---- restaurar backup completo (migração única do app antigo) ----
+  function restoreBackupFile(file){
+    if(!db){ showError('Sem conexão com os dados'); return; }
+    var reader=new FileReader();
+    reader.onerror=function(){ showError('Não foi possível ler o arquivo'); };
+    reader.onload=function(){
+      var backup;
+      try{ backup=JSON.parse(String(reader.result||'{}')); }
+      catch(e){ showError('Arquivo inválido (não é um JSON válido)'); return; }
+      var itensObj=backup.itens||{};
+      var vcObj=backup.vendaCasada||{};
+      var margensObj=backup.margens||null;
+      var itensIds=Object.keys(itensObj);
+      var vcIds=Object.keys(vcObj);
+      var total=itensIds.length+vcIds.length+(margensObj?1:0);
+      if(!total){ showError('Backup vazio ou em formato inesperado'); return; }
+      showConfirmDialog('Isso vai gravar '+itensIds.length+' item(ns), '+vcIds.length+' registro(s) de venda casada'+(margensObj?' e as margens':'')+' no banco atual, mantendo os IDs originais (sobrescreve se já existir). Continuar?',function(){
+        var ok=0, fail=0;
+        var tasks=[];
+        itensIds.forEach(function(id){
+          tasks.push(function(next){
+            db.collection('itens').doc(id).set(itensObj[id]).then(function(){ok++;next();},function(){fail++;next();});
+          });
+        });
+        vcIds.forEach(function(id){
+          tasks.push(function(next){
+            db.collection('vendaCasada').doc(id).set(vcObj[id]).then(function(){ok++;next();},function(){fail++;next();});
+          });
+        });
+        if(margensObj){
+          tasks.push(function(next){
+            db.collection('config').doc('margens').set({valores:margensObj,updatedAt:new Date().toISOString(),updatedBy:myId||null}).then(function(){ok++;next();},function(){fail++;next();});
+          });
+        }
+        function runNext(idx){
+          if(idx>=tasks.length){
+            showToast(fail>0?('Restauração concluída: '+ok+' ok, '+fail+' com erro'):('Restauração concluída: '+ok+' registros importados'),fail>0?'error':'success');
+            return;
+          }
+          tasks[idx](function(){ runNext(idx+1); });
+        }
+        runNext(0);
+      });
+    };
+    reader.readAsText(file,'UTF-8');
+  }
+  document.getElementById('imp-btn-restore-backup').addEventListener('click',function(){ document.getElementById('imp-file-backup').click(); });
+  document.getElementById('imp-file-backup').addEventListener('change',function(e){
+    var file=e.target.files && e.target.files[0];
+    if(!file) return;
+    restoreBackupFile(file);
     e.target.value='';
   });
 
