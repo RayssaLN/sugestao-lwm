@@ -37,5 +37,5 @@ assets/          → logo e ícones das telas
 - **Desempenho** — o que vendeu e o que ficou parado
 - **Venda Casada** — itens comprados em conjunto
 - **Importação** — planilhas, relatórios, margens por marca e restauração de backup
-
-- Feito por **Rayssa** 💙
+```
+Feito por **Rayssa** 💙
