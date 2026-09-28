@@ -237,6 +237,8 @@
   .field textarea{resize:vertical;min-height:44px;}
   .cad-check-label{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink-muted);margin:-4px 0 12px;}
   .codigo-warning{background:var(--warning-bg);color:var(--warning);font-size:12.5px;font-weight:600;padding:7px 10px;border-radius:6px;margin:-4px 0 12px;}
+  .pedido-qtd.input-error{border-color:var(--danger);color:var(--danger);background:var(--danger-bg);}
+  .qtd-min-warning{font-size:11.5px;font-weight:600;color:var(--danger);margin-top:4px;}
   .sim-cad-label{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-muted);margin-bottom:8px;}
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
   .row3{display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px;}
@@ -489,6 +491,7 @@
         <div class="field"><label>Margem desejada (%)</label><input type="number" step="0.1" id="fi-margem" placeholder="ex: 30"></div>
         <div class="field"><label>Venda (R$)</label><input type="number" step="0.01" id="fi-venda"></div>
       </div>
+      <div class="field" style="max-width:220px;"><label>Qtd mínima p/ pedido (pç)</label><input type="number" min="1" step="1" id="fi-qtdminima" placeholder="ex: 10"></div>
 
       <div class="field">
         <label>Similares</label>
@@ -1325,9 +1328,9 @@
     if(ref && ref!=='main'){
       var idx=parseInt(ref.replace('sim',''),10);
       var s=(i.similares||[])[idx];
-      if(s) return {codigo:s.codigo,marca:s.marca,venda:s.venda};
+      if(s) return {codigo:s.codigo,marca:s.marca,venda:s.venda,qtdMinima:s.qtdMinima};
     }
-    return {codigo:i.codigo,marca:i.marca,venda:i.venda};
+    return {codigo:i.codigo,marca:i.marca,venda:i.venda,qtdMinima:i.qtdMinima};
   }
 
   // Lista de pedidos do item: [{ref, quantidade}, ...]. Convertida a partir dos campos
@@ -1407,10 +1410,14 @@
             if(!lista.length) lista=[{ref:'main',quantidade:null}];
             if(!hasSim) lista=lista.slice(0,1);
             var rows=lista.map(function(p,idx){
+              var refInfo=resolveRef(i,p.ref);
+              var qtdMin=refInfo.qtdMinima;
+              var abaixoDoMin=qtdMin!=null && p.quantidade!=null && p.quantidade!=='' && Number(p.quantidade)>0 && Number(p.quantidade)<qtdMin;
               return '<div class="pedido-row" data-idx="'+idx+'">'+
                 (hasSim?'<select class="pedido-select" data-idx="'+idx+'">'+pedirOptionsHTML(i,p.ref)+'</select>':'')+
-                '<input type="number" min="0" step="1" class="pedido-qtd" data-idx="'+idx+'" value="'+(p.quantidade!=null?p.quantidade:'')+'" placeholder="qtd">'+
+                '<input type="number" min="0" step="1" class="pedido-qtd'+(abaixoDoMin?' input-error':'')+'" data-idx="'+idx+'" value="'+(p.quantidade!=null?p.quantidade:'')+'" placeholder="'+(qtdMin?('mín. '+qtdMin+' pç'):'qtd')+'">'+
                 (lista.length>1?'<button type="button" class="icon-btn pedido-remove" data-idx="'+idx+'" title="Remover">✕</button>':'')+
+                (abaixoDoMin?'<div class="qtd-min-warning">Mínimo desse fornecedor: '+qtdMin+' pç</div>':'')+
               '</div>';
             }).join('');
             return '<div class="qtd-box"><span class="lbl">Pedir</span>'+rows+
@@ -1530,6 +1537,25 @@
             if(!arr[idx]) arr[idx]={ref:'main',quantidade:null};
             if(el.classList.contains('pedido-select')) arr[idx].ref=el.value;
             else arr[idx].quantidade=el.value===''?null:Number(el.value);
+            // bloqueia se a quantidade pedida ficar abaixo do mínimo desse fornecedor (marca principal ou similar)
+            var row=el.closest('.pedido-row');
+            var qtdInput=row?row.querySelector('.pedido-qtd'):null;
+            var refInfo=resolveRef(item,arr[idx].ref);
+            var qtd=arr[idx].quantidade;
+            var warnEl=row?row.querySelector('.qtd-min-warning'):null;
+            if(qtd!=null && qtd>0 && refInfo.qtdMinima!=null && qtd<refInfo.qtdMinima){
+              if(qtdInput) qtdInput.classList.add('input-error');
+              if(!warnEl && row){
+                warnEl=document.createElement('div');
+                warnEl.className='qtd-min-warning';
+                row.appendChild(warnEl);
+              }
+              if(warnEl) warnEl.textContent='Mínimo desse fornecedor: '+refInfo.qtdMinima+' pç — quantidade não foi salva.';
+              showToast('Quantidade mínima de '+refInfo.qtdMinima+' pç pra '+(refInfo.marca||refInfo.codigo||'esse fornecedor')+'. Ajuste a quantidade pra salvar.','error');
+              return;
+            }
+            if(qtdInput) qtdInput.classList.remove('input-error');
+            if(warnEl) warnEl.remove();
             savePedidos(id,arr);
           });
         });
@@ -1617,6 +1643,11 @@
     var num=Number(val);
     if(isNaN(num) || num<0){ showError('Quantidade inválida'); return; }
     var ref='sim'+idx;
+    var refInfo=resolveRef(item,ref);
+    if(num>0 && refInfo.qtdMinima!=null && num<refInfo.qtdMinima){
+      showToast('Quantidade mínima de '+refInfo.qtdMinima+' pç pra '+(refInfo.marca||refInfo.codigo||'esse fornecedor')+'. Ajuste a quantidade.','error');
+      return;
+    }
     var arr=getPedidosSafe(item);
     var found=arr.find(function(p){return p.ref===ref;});
     if(found){
@@ -1716,7 +1747,8 @@
         '<input placeholder="Custo" type="number" step="0.01" class="sim-custo" value="'+(data.custo!=null?data.custo:'')+'">'+
         '<input placeholder="Margem %" type="number" step="0.1" class="sim-margem" value="'+margemInicial+'">'+
         '<input placeholder="Venda" type="number" step="0.01" class="sim-venda" value="'+(data.venda!=null?data.venda:'')+'">'+
-      '</div>';
+      '</div>'+
+      '<input placeholder="Qtd mínima p/ pedido (pç)" type="number" min="1" step="1" class="sim-qtdminima" style="margin-top:6px;" value="'+(data.qtdMinima!=null?data.qtdMinima:'')+'">';
     block.querySelector('.sim-remove').addEventListener('click',function(){ block.remove(); });
     wireSimBlock(block);
     simRowsEl.appendChild(block);
@@ -1819,6 +1851,7 @@
       document.getElementById('fi-descricao').value=item.descricao||'';
       document.getElementById('fi-custo').value=item.custo!=null?item.custo:'';
       document.getElementById('fi-venda').value=item.venda!=null?item.venda:'';
+      document.getElementById('fi-qtdminima').value=item.qtdMinima!=null?item.qtdMinima:'';
       var margemAtual=calcMargem(item.custo,item.venda);
       document.getElementById('fi-margem').value=margemAtual!==null?margemAtual.toFixed(1):'';
       document.getElementById('fi-obs').value=item.observacao||'';
@@ -1853,6 +1886,7 @@
       var margemV=block.querySelector('.sim-margem').value;
       var v=block.querySelector('.sim-venda').value;
       var cad=block.querySelector('.sim-cadastrado').checked;
+      var qtdMinV=block.querySelector('.sim-qtdminima').value;
       if(c||m||v||custoV){
         similares.push({
           codigo:c,
@@ -1860,7 +1894,8 @@
           custo:custoV?Number(custoV):null,
           margem:margemV?Number(margemV):null,
           venda:v?Number(v):null,
-          cadastrado:cad
+          cadastrado:cad,
+          qtdMinima:qtdMinV?Number(qtdMinV):null
         });
       }
     });
@@ -1875,6 +1910,7 @@
       descricao:document.getElementById('fi-descricao').value.trim(),
       custo:custoVal?Number(custoVal):null,
       venda:vendaVal?Number(vendaVal):null,
+      qtdMinima:document.getElementById('fi-qtdminima').value?Number(document.getElementById('fi-qtdminima').value):null,
       observacao:document.getElementById('fi-obs').value.trim(),
       cadastrado:document.getElementById('fi-cadastrado').checked,
       similares:similares
@@ -1897,13 +1933,13 @@
   });
 
   // ---- importar planilha (CSV) ----
-  // Colunas fixas (0-10) + grupos repetidos de 6 colunas por similar, a partir da coluna 11:
-  // Similar N Codigo, Similar N Marca, Similar N Custo, Similar N Margem %, Similar N Venda, Similar N Cadastrado (Sim/Nao)
-  var IMPORT_BASE_HEADER=['Codigo','Marca','Vendedor','Data sugestao (AAAA-MM-DD)','Aplicacao (veiculo/modelo)','Descricao (nome da peca)','Custo','Margem % (opcional se preencher Venda)','Venda','Cadastrado (Sim/Nao)','Observacao'];
-  var SIM_GROUP_LEN=6;
+  // Colunas fixas (0-11) + grupos repetidos de 7 colunas por similar, a partir da coluna 12:
+  // Similar N Codigo, Similar N Marca, Similar N Custo, Similar N Margem %, Similar N Venda, Similar N Qtd minima, Similar N Cadastrado (Sim/Nao)
+  var IMPORT_BASE_HEADER=['Codigo','Marca','Vendedor','Data sugestao (AAAA-MM-DD)','Aplicacao (veiculo/modelo)','Descricao (nome da peca)','Custo','Margem % (opcional se preencher Venda)','Venda','Qtd minima p/ pedido (pç, opcional)','Cadastrado (Sim/Nao)','Observacao'];
+  var SIM_GROUP_LEN=7;
   var IMPORT_SIM_SLOTS=3; // quantos jogos de colunas "Similar N" o modelo já vem com — pode copiar mais colunas seguindo o mesmo padrão
   function simGroupHeader(n){
-    return ['Similar '+n+' Codigo','Similar '+n+' Marca','Similar '+n+' Custo','Similar '+n+' Margem %','Similar '+n+' Venda','Similar '+n+' Cadastrado (Sim/Nao)'];
+    return ['Similar '+n+' Codigo','Similar '+n+' Marca','Similar '+n+' Custo','Similar '+n+' Margem %','Similar '+n+' Venda','Similar '+n+' Qtd minima (pç, opcional)','Similar '+n+' Cadastrado (Sim/Nao)'];
   }
   function buildImportHeader(){
     var h=IMPORT_BASE_HEADER.slice();
@@ -1951,6 +1987,8 @@
     if(str===undefined||str===null) return null;
     str=String(str).trim();
     if(!str) return null;
+    str=str.replace(/[^\d,.\-]/g,''); // tira "R$", espaços e qualquer outro símbolo, deixa só números/vírgula/ponto
+    if(!str) return null;
     if(str.indexOf(',')!==-1 && str.indexOf('.')!==-1) str=str.replace(/\./g,'').replace(',','.');
     else if(str.indexOf(',')!==-1) str=str.replace(',','.');
     var n=Number(str);
@@ -1969,10 +2007,10 @@
 
   function downloadTemplate(){
     if(!downloadsCap){ showError('Exportação indisponível nesta visualização'); return; }
-    var example=['PD1234','FRAS-LE','FABIANA',todayISO(),'GOL/PALIO 1.0 8V 2012-2016','PASTILHA DE FREIO DIANTEIRA','120,00','30','','Não','Exemplo de observação (pode deixar em branco)',
-      'S4380C','SYL','100,00','25','','Sim',
-      'B2201','COBREQ','','','160,00','Não',
-      '','','','','',''];
+    var example=['PD1234','FRAS-LE','FABIANA',todayISO(),'GOL/PALIO 1.0 8V 2012-2016','PASTILHA DE FREIO DIANTEIRA','120,00','30','','10','Não','Exemplo de observação (pode deixar em branco)',
+      'S4380C','SYL','100,00','25','','','Sim',
+      'B2201','COBREQ','','','160,00','6','Não',
+      '','','','','','',''];
     var lines=[buildImportHeader().map(csvField).join(';'),example.map(csvField).join(';')];
     var csv='﻿'+lines.join('\r\n');
     var blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
@@ -2006,8 +2044,9 @@
           descricao:(r[5]||'').trim(),
           custo:custo,
           venda:venda,
-          cadastrado:parseBoolPT(r[9]),
-          observacao:(r[10]||'').trim(),
+          qtdMinima:parseNumberBR(r[9]),
+          cadastrado:parseBoolPT(r[10]),
+          observacao:(r[11]||'').trim(),
           similares:[],
           status:'pendente',
           decidedBy:null,decidedAt:null,
@@ -2017,7 +2056,7 @@
           createdBy:myId
         };
         var similares=[];
-        for(var base=11; base<r.length; base+=SIM_GROUP_LEN){
+        for(var base=12; base<r.length; base+=SIM_GROUP_LEN){
           var simCodigo=(r[base]||'').trim();
           if(!simCodigo) continue;
           var simCusto=parseNumberBR(r[base+2]);
@@ -2029,7 +2068,8 @@
             custo:simCusto,
             margem:simMargem,
             venda:simVenda,
-            cadastrado:parseBoolPT(r[base+5])
+            qtdMinima:parseNumberBR(r[base+5]),
+            cadastrado:parseBoolPT(r[base+6])
           });
         }
         body.similares=similares;
