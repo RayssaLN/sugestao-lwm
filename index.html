@@ -934,9 +934,7 @@
     nomes.forEach(function(v){ var g=porVendedor[v]; totalCusto+=g.custo; totalVendidos+=g.vendidos; totalFaturamento+=g.faturamento; totalParados+=g.parados; totalPendentes+=g.pendentes; });
 
     var summaryEl=document.getElementById('desemp-summary');
-    if(!filtroAtivo){
-      summaryEl.innerHTML='<div class="empty" style="padding:26px 20px;">Filtre por vendedor ou busque um item para ver o resumo.</div>';
-    } else if(!totalItens){
+    if(!totalItens){
       summaryEl.innerHTML='';
     } else {
       // Ranking por itens comprados (quem mais indica), desempatando por % vendido.
