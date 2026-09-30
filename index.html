@@ -196,18 +196,38 @@
   .imp-margem-chip{font-size:12px;font-weight:600;background:var(--surface-alt);border:1px solid var(--border);border-radius:999px;padding:4px 11px;color:var(--ink);}
   .imp-margem-chip b{font-family:var(--font-mono);color:var(--accent);}
 
-  .vc-form{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px;}
+  .vc-form{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:18px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow);}
+  .vc-form-field{display:flex;flex-direction:column;gap:5px;}
+  .vc-form-field label{font-size:11px;font-weight:600;color:var(--ink-muted);text-transform:uppercase;letter-spacing:.02em;}
   .vc-form input{
     font-family:var(--font-sans);font-size:13.5px;background:var(--surface-alt);color:var(--ink);
-    border:1px solid var(--border);border-radius:6px;padding:8px 10px;
+    border:1px solid var(--border);border-radius:6px;padding:8px 10px;width:100%;
   }
   .vc-form input:focus{border-color:var(--accent);outline:none;}
-  #vc-codigo{flex:1 1 140px;min-width:120px;}
-  #vc-vendedor{flex:1 1 140px;min-width:120px;}
-  #vc-custo{width:110px;}
-  #vc-qtd{width:90px;}
-  #vc-data{width:150px;}
-  .desemp-row .dr-del{margin-left:4px;}
+  .vc-form #vc-add{padding:9px 18px;}
+  .vc-f-codigo{flex:1 1 150px;min-width:130px;}
+  .vc-f-vendedor{flex:1 1 150px;min-width:130px;}
+  .vc-f-custo{width:110px;}
+  .vc-f-qtd{width:90px;}
+  .vc-f-data{width:150px;}
+  @media (max-width:560px){ .vc-form{padding:14px;} .vc-f-codigo,.vc-f-vendedor{flex-basis:100%;} .vc-form #vc-add{width:100%;justify-content:center;} }
+
+  .vc-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:10px;box-shadow:var(--shadow);}
+  .vc-card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
+  .vc-card-title{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .vc-card-meta{font-size:12px;color:var(--ink-faint);margin-top:5px;}
+  .vc-card-fields{display:flex;gap:18px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px dashed var(--border);align-items:flex-end;}
+  .vc-field{display:flex;flex-direction:column;gap:4px;}
+  .vc-field label{font-size:10.5px;font-weight:700;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.02em;}
+  .vc-field input, .vc-field select{
+    font-family:var(--font-sans);font-size:13px;background:var(--surface-alt);color:var(--ink);
+    border:1px solid var(--border);border-radius:5px;padding:6px 8px;min-width:100px;
+  }
+  .vc-field select{min-width:140px;}
+  .vc-field input:focus, .vc-field select:focus{border-color:var(--accent);outline:none;}
+  .vc-chegada-select.st-faturamento{border-color:#D9A441;color:#D9A441;}
+  .vc-chegada-select.st-chegou{border-color:var(--success);color:var(--success);}
+  .vc-empty-hint{font-size:11.5px;color:var(--ink-faint);margin:-8px 0 16px;}
 
   .similares{margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);}
   .similares .lbl{font-size:11.5px;color:var(--ink-faint);margin-bottom:5px;display:block;}
@@ -401,11 +421,11 @@
     </header>
 
     <div class="vc-form" id="vc-form">
-      <input id="vc-codigo" placeholder="Código do item">
-      <input id="vc-vendedor" placeholder="Vendedor" list="dl-vendedores-vc"><datalist id="dl-vendedores-vc"></datalist>
-      <input id="vc-custo" type="number" step="0.01" min="0" placeholder="Custo (R$)">
-      <input id="vc-qtd" type="number" step="1" min="1" placeholder="Quantidade">
-      <input id="vc-data" type="date">
+      <div class="vc-form-field vc-f-codigo"><label>Código do item</label><input id="vc-codigo" placeholder="ex: 8181"></div>
+      <div class="vc-form-field vc-f-vendedor"><label>Vendedor</label><input id="vc-vendedor" placeholder="Nome do vendedor" list="dl-vendedores-vc"><datalist id="dl-vendedores-vc"></datalist></div>
+      <div class="vc-form-field vc-f-custo"><label>Custo (R$)</label><input id="vc-custo" type="number" step="0.01" min="0" placeholder="0,00"></div>
+      <div class="vc-form-field vc-f-qtd"><label>Quantidade</label><input id="vc-qtd" type="number" step="1" min="1" placeholder="pç"></div>
+      <div class="vc-form-field vc-f-data"><label>Data da compra</label><input id="vc-data" type="date"></div>
       <button type="button" class="btn btn-primary" id="vc-add">+ Adicionar</button>
     </div>
 
@@ -1129,25 +1149,29 @@
     listEl3.innerHTML=ordenada.map(function(i){
       var sit=vcSituacao(i);
       var chegada=i.chegada||'aguardando';
-      return '<div class="desemp-row" data-id="'+i.id+'">'+
-        '<div class="dr-main"><span class="c">'+esc(i.codigo)+'</span>'+
-          '<div class="dr-meta">'+esc(i.vendedor||'—')+' · comprado em '+fmtDate(i.dataCompra)+' · custo '+fmtMoney(i.custo)+
-            (i.quantidade!=null?' · '+i.quantidade+' pç comprada(s)':'')+'</div>'+
+      return '<div class="vc-card" data-id="'+i.id+'">'+
+        '<div class="vc-card-top">'+
+          '<div class="vc-card-title">'+
+            '<span class="codigo">'+esc(i.codigo)+'</span>'+
+            (i.vendedor?'<span class="badge badge-marca">'+esc(i.vendedor)+'</span>':'')+
+            '<span class="desemp-status '+sit+'">'+VC_SIT_LABEL[sit]+'</span>'+
+          '</div>'+
+          '<button type="button" class="icon-btn vc-del" title="Excluir">🗑</button>'+
         '</div>'+
-        '<div class="dr-fields">'+
-          '<label>Chegada<select class="vc-chegada-select st-'+chegada+'">'+
+        '<div class="vc-card-meta">comprado em '+fmtDate(i.dataCompra)+' · custo '+fmtMoney(i.custo)+
+          (i.quantidade!=null?' · '+i.quantidade+' pç comprada(s)':'')+'</div>'+
+        '<div class="vc-card-fields">'+
+          '<div class="vc-field"><label>Chegada</label><select class="vc-chegada-select st-'+chegada+'">'+
             '<option value="aguardando"'+(chegada==='aguardando'?' selected':'')+'>Aguardando</option>'+
             '<option value="faturamento"'+(chegada==='faturamento'?' selected':'')+'>Em faturamento</option>'+
             '<option value="chegou"'+(chegada==='chegou'?' selected':'')+'>Chegou</option>'+
-          '</select></label>'+
-          '<label>Qtd vendida<input type="number" min="0" step="1" class="vc-qtd-vendida" value="'+(i.vendidoQtd!=null?i.vendidoQtd:'')+'"></label>'+
-          '<label>Data da venda<input type="date" class="vc-data-venda" value="'+(i.vendidoData||'')+'"></label>'+
-          '<span class="desemp-status '+sit+'">'+VC_SIT_LABEL[sit]+'</span>'+
-          '<button type="button" class="icon-btn dr-del" title="Excluir">🗑</button>'+
+          '</select></div>'+
+          '<div class="vc-field"><label>Qtd vendida</label><input type="number" min="0" step="1" class="vc-qtd-vendida" value="'+(i.vendidoQtd!=null?i.vendidoQtd:'')+'"></div>'+
+          '<div class="vc-field"><label>Data da venda</label><input type="date" class="vc-data-venda" value="'+(i.vendidoData||'')+'"></div>'+
         '</div>'+
       '</div>';
     }).join('');
-    Array.prototype.forEach.call(listEl3.querySelectorAll('.desemp-row'),function(row){
+    Array.prototype.forEach.call(listEl3.querySelectorAll('.vc-card'),function(row){
       var id=row.getAttribute('data-id');
       var qtdInput=row.querySelector('.vc-qtd-vendida');
       var dataInput=row.querySelector('.vc-data-venda');
@@ -1168,7 +1192,7 @@
           showError('Não foi possível salvar a chegada',err);
         });
       });
-      row.querySelector('.dr-del').addEventListener('click',function(){ excluirVC(id); });
+      row.querySelector('.vc-del').addEventListener('click',function(){ excluirVC(id); });
     });
   }
 
