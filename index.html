@@ -229,6 +229,34 @@
   .vc-chegada-select.st-chegou{border-color:var(--success);color:var(--success);}
   .vc-empty-hint{font-size:11.5px;color:var(--ink-faint);margin:-8px 0 16px;}
 
+  .vc-highlights{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;}
+  .vc-highlight{flex:1 1 200px;display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;}
+  .vc-highlight-total{background:var(--accent-soft);border-color:var(--accent);}
+  .vc-highlight-ic{font-size:22px;line-height:1;flex:none;}
+  .vc-highlight-lbl{display:block;font-size:10.5px;font-weight:700;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.03em;}
+  .vc-highlight b{display:block;font-size:15px;font-weight:700;margin-top:1px;}
+  .vc-highlight-sub{display:block;font-size:12px;color:var(--ink-muted);margin-top:1px;}
+
+  .vc-ranking{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:18px;}
+  .vc-ranking-head{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;}
+  .vc-ranking-head h3{margin:0;font-size:14px;font-weight:700;}
+  .vc-legend{font-size:11px;color:var(--ink-faint);display:flex;align-items:center;gap:4px;}
+  .vr-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-left:8px;}
+  .vr-dot:first-child{margin-left:0;}
+  .vc-rank-list{display:flex;flex-direction:column;gap:7px;}
+  .vr-row{display:grid;grid-template-columns:22px minmax(70px,150px) 1fr auto;gap:10px;align-items:center;}
+  .vr-pos{font-family:var(--font-mono);font-size:11.5px;color:var(--ink-faint);}
+  .vr-row:first-child .vr-pos, .vr-row:first-child .vr-name{color:var(--accent);}
+  .vr-name{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .vr-bar-wrap{background:var(--surface-alt);border-radius:999px;height:13px;overflow:hidden;}
+  .vr-bar{display:flex;height:100%;min-width:3px;}
+  .vr-seg{height:100%;}
+  .vr-seg-ok{background:var(--success);}
+  .vr-seg-wait{background:var(--warning);}
+  .vr-seg-stuck{background:var(--danger);}
+  .vr-num{font-family:var(--font-mono);font-size:11.5px;color:var(--ink-muted);white-space:nowrap;text-align:right;}
+  @media (max-width:560px){ .vr-row{grid-template-columns:18px 90px 1fr auto;} .vr-num{display:none;} }
+
   .similares{margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);}
   .similares .lbl{font-size:11.5px;color:var(--ink-faint);margin-bottom:5px;display:block;}
   .similares.no-similar{font-size:11.5px;font-weight:600;letter-spacing:0.02em;color:var(--ink-faint);background:var(--surface-alt);border-top:none;border-radius:6px;padding:7px 10px;}
@@ -570,6 +598,7 @@
   var simRowCount=0;
   var currentScreen='home';
   var activePedirSim=null; // {id, idx} - similar com campo de quantidade aberto no card
+  var vcVendedoresExpandido=false; // ranking da Venda Casada: mostrar só o top 6 ou todos
 
   // Margem padrão por marca (%). Preenche a margem automaticamente ao digitar a marca
   // num item novo (só quando a margem ainda está vazia — dá pra sempre alterar na mão).
@@ -1119,24 +1148,56 @@
     if(!totalItens){
       summaryEl.innerHTML='';
     } else {
-      var cards='<div class="vend-card total"><h3>Total no período</h3>'+
-        '<div class="vc-row"><span>Itens comprados</span><b>'+totalItens+'</b></div>'+
-        '<div class="vc-row"><span>Custo total</span><b>'+fmtMoney(totalCusto)+'</b></div>'+
-        '<div class="vc-row"><span>Venderam</span><b class="ok">'+totalVendidos+'</b></div>'+
-        '<div class="vc-row"><span>Em faturamento</span><b class="wait">'+totalFaturamento+'</b></div>'+
-        '<div class="vc-row"><span>Parados no estoque</span><b class="stuck">'+totalParados+'</b></div>'+
-        '</div>';
-      cards+=nomes.map(function(v){
+      // Ranking por itens comprados (quem mais indica), desempatando por % vendido.
+      var ranking=nomes.map(function(v){
         var g=porVendedor[v];
-        return '<div class="vend-card"><h3>'+esc(v)+'</h3>'+
-          '<div class="vc-row"><span>Itens comprados</span><b>'+g.itens+'</b></div>'+
-          '<div class="vc-row"><span>Custo total</span><b>'+fmtMoney(g.custo)+'</b></div>'+
-          '<div class="vc-row"><span>Venderam</span><b class="ok">'+g.vendidos+'</b></div>'+
-          '<div class="vc-row"><span>Em faturamento</span><b class="wait">'+g.faturamento+'</b></div>'+
-          '<div class="vc-row"><span>Parados no estoque</span><b class="stuck">'+g.parados+'</b></div>'+
-          '</div>';
+        var pct=g.itens?Math.round((g.vendidos/g.itens)*100):0;
+        return {nome:v,itens:g.itens,custo:g.custo,vendidos:g.vendidos,faturamento:g.faturamento,parados:g.parados,pct:pct};
+      }).sort(function(a,b){ return b.itens-a.itens || b.pct-a.pct; });
+
+      var maisIndica=ranking[0];
+      var melhorConversao=ranking.slice().sort(function(a,b){ return b.pct-a.pct || b.itens-a.itens; })[0];
+      var maxItens=Math.max.apply(null,ranking.map(function(r){return r.itens;}))||1;
+
+      var highlightsHTML='<div class="vc-highlights">'+
+        '<div class="vc-highlight"><span class="vc-highlight-ic">🏆</span><div><span class="vc-highlight-lbl">Mais indica itens</span><b>'+esc(maisIndica.nome)+'</b><span class="vc-highlight-sub">'+maisIndica.itens+' itens</span></div></div>'+
+        (melhorConversao.itens?'<div class="vc-highlight"><span class="vc-highlight-ic">📈</span><div><span class="vc-highlight-lbl">Melhor conversão</span><b>'+esc(melhorConversao.nome)+'</b><span class="vc-highlight-sub">'+melhorConversao.pct+'% vendido</span></div></div>':'')+
+        '<div class="vc-highlight vc-highlight-total"><span class="vc-highlight-ic">📦</span><div><span class="vc-highlight-lbl">Total no período</span><b>'+totalItens+' itens</b><span class="vc-highlight-sub">'+fmtMoney(totalCusto)+' · '+totalVendidos+' vendidos</span></div></div>'+
+      '</div>';
+
+      var showAll=vcVendedoresExpandido || nomes.length<=6;
+      var visivel=showAll?ranking:ranking.slice(0,6);
+
+      var rowsHTML=visivel.map(function(r,idx){
+        var pctOk=r.itens?(r.vendidos/r.itens*100):0;
+        var pctWait=r.itens?(r.faturamento/r.itens*100):0;
+        var pctStuck=r.itens?(r.parados/r.itens*100):0;
+        var barWidth=(r.itens/maxItens*100);
+        return '<div class="vr-row">'+
+          '<span class="vr-pos">'+(idx+1)+'º</span>'+
+          '<span class="vr-name">'+esc(r.nome)+'</span>'+
+          '<span class="vr-bar-wrap"><span class="vr-bar" style="width:'+barWidth+'%">'+
+            '<span class="vr-seg vr-seg-ok" style="width:'+pctOk+'%"></span>'+
+            '<span class="vr-seg vr-seg-wait" style="width:'+pctWait+'%"></span>'+
+            '<span class="vr-seg vr-seg-stuck" style="width:'+pctStuck+'%"></span>'+
+          '</span></span>'+
+          '<span class="vr-num">'+r.itens+' pç · '+fmtMoney(r.custo)+'</span>'+
+        '</div>';
       }).join('');
-      summaryEl.innerHTML=cards;
+
+      var toggleHTML=nomes.length>6?('<button type="button" class="link-btn" id="vc-toggle-vendedores">'+(showAll?'Mostrar menos':'Ver todos os '+nomes.length+' vendedores')+'</button>'):'';
+
+      summaryEl.innerHTML=highlightsHTML+
+        '<div class="vc-ranking">'+
+          '<div class="vc-ranking-head"><h3>Ranking de vendedores</h3>'+
+            '<span class="vc-legend"><i class="vr-dot vr-seg-ok"></i>vendido<i class="vr-dot vr-seg-wait"></i>faturamento<i class="vr-dot vr-seg-stuck"></i>parado</span>'+
+          '</div>'+
+          '<div class="vc-rank-list">'+rowsHTML+'</div>'+
+          toggleHTML+
+        '</div>';
+
+      var toggleBtn=document.getElementById('vc-toggle-vendedores');
+      if(toggleBtn) toggleBtn.addEventListener('click',function(){ vcVendedoresExpandido=!vcVendedoresExpandido; renderVendaCasada(); });
     }
 
     var listEl3=document.getElementById('vc-list');
