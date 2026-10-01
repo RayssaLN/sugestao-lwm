@@ -172,6 +172,7 @@
   .desemp-row .dr-main{flex:1;min-width:180px;}
   .desemp-row .dr-main .c{font-family:var(--font-mono);font-weight:600;}
   .desemp-row .dr-meta{font-size:11.5px;color:var(--ink-faint);margin-top:2px;}
+  .dr-similar-tag{color:var(--accent);font-weight:600;}
   .desemp-row .dr-fields{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
   .desemp-row .dr-fields label{font-size:11px;color:var(--ink-faint);display:flex;flex-direction:column;gap:2px;}
   .desemp-row input, .desemp-row select{
@@ -774,11 +775,12 @@
   }
 
   function renderStats(){
-    var total=items.length;
-    var pend=items.filter(function(i){return i.status==='pendente';}).length;
-    var apr=items.filter(function(i){return i.status==='aprovado';}).length;
-    var comp=items.filter(function(i){return i.status==='comprado';}).length;
-    var rej=items.filter(function(i){return i.status==='rejeitado';}).length;
+    var itensProprios=items.filter(function(i){return !i.origemSimilarId;});
+    var total=itensProprios.length;
+    var pend=itensProprios.filter(function(i){return i.status==='pendente';}).length;
+    var apr=itensProprios.filter(function(i){return i.status==='aprovado';}).length;
+    var comp=itensProprios.filter(function(i){return i.status==='comprado';}).length;
+    var rej=itensProprios.filter(function(i){return i.status==='rejeitado';}).length;
     statsEl.innerHTML=
       statCardHTML(total,'Total','var(--accent)','total')+
       statCardHTML(pend,'Pendentes','var(--warning)','clock')+
@@ -790,8 +792,8 @@
   function renderHomeCounts(){
     var pend=items.filter(function(i){return i.status==='pendente';}).length;
     var apr=items.filter(function(i){return i.status==='aprovado';}).length;
-    var comp=items.filter(function(i){return i.status==='comprado';}).length;
-    var semMarcar=items.filter(function(i){return i.status==='comprado' && (i.vendidoQtd==null||i.vendidoQtd==='');}).length;
+    var comp=items.filter(function(i){return i.status==='comprado' && temLinhaPrincipal(i);}).length;
+    var semMarcar=items.filter(function(i){return i.status==='comprado' && temLinhaPrincipal(i) && (i.vendidoQtd==null||i.vendidoQtd==='');}).length;
     document.getElementById('nav-count-sugestao').textContent=pend+' pendente(s)';
     document.getElementById('nav-count-analisar').textContent=pend+' para decidir';
     document.getElementById('nav-count-comprar').textContent=apr+' aguardando compra';
@@ -855,11 +857,21 @@
     renderDesempenho();
   }
 
+  // Um item só conta como "o principal foi comprado" se ele nunca teve pedidos customizados
+  // (itens antigos, de antes dessa linha por linha existir) ou se sobrou uma linha com ref='main'
+  // entre os pedidos. Se o item só foi pedido via similar(es), o principal em si nunca foi comprado
+  // de verdade — quem representa essa compra é o cadastro à parte criado em setPedidoCompra.
+  function temLinhaPrincipal(i){
+    var arr=i.pedidos;
+    if(!arr || !arr.length) return true;
+    return arr.some(function(p){ return (p.ref||'main')==='main'; });
+  }
+
   function populateDesempVendedorFilter(){
     var sel=document.getElementById('desemp-vendedor');
     var atual=sel.value;
     var vendedores=Array.prototype.filter.call(
-      items.filter(function(i){return i.status==='comprado';}).map(function(i){return i.vendedor;}),
+      items.filter(function(i){return i.status==='comprado' && temLinhaPrincipal(i);}).map(function(i){return i.vendedor;}),
       function(v,idx,arr){ return v && arr.indexOf(v)===idx; }
     ).sort();
     sel.innerHTML='<option value="">Todos os vendedores</option>'+
@@ -871,7 +883,7 @@
     var sel=document.getElementById('desemp-marca');
     var atual=sel.value;
     var marcas=Array.prototype.filter.call(
-      items.filter(function(i){return i.status==='comprado';}).map(function(i){return i.marca;}),
+      items.filter(function(i){return i.status==='comprado' && temLinhaPrincipal(i);}).map(function(i){return i.marca;}),
       function(v,idx,arr){ return v && arr.indexOf(v)===idx; }
     ).sort();
     sel.innerHTML='<option value="">Todas as marcas</option>'+
@@ -893,6 +905,7 @@
     var buscaFiltro=(document.getElementById('desemp-busca').value||'').trim().toLowerCase();
     var lista=items.filter(function(i){
       if(i.status!=='comprado') return false;
+      if(!temLinhaPrincipal(i)) return false;
       if(mes && (!i.dataCompra || i.dataCompra.slice(0,7)!==mes)) return false;
       if(vendedorFiltro && i.vendedor!==vendedorFiltro) return false;
       if(marcaFiltro && i.marca!==marcaFiltro) return false;
@@ -1005,7 +1018,8 @@
         '<div class="dr-main"><span class="c">'+esc(i.codigo)+'</span>'+(i.marca?' · '+esc(i.marca):'')+
           '<div class="dr-meta">'+esc(i.vendedor||'—')+' · comprado em '+fmtDate(i.dataCompra)+' · custo '+fmtMoney(i.custo)+
             (qtdComprada!=null?' · '+qtdComprada+' pç pedida(s)':'')+
-            ' · '+chegadaLabel(i.chegada)+(i.chegada==='faturamento' && i.faturamentoData?' em '+fmtDate(i.faturamentoData):'')+(i.chegada==='chegou' && i.chegadaData?' em '+fmtDate(i.chegadaData):'')+'</div>'+
+            ' · '+chegadaLabel(i.chegada)+(i.chegada==='faturamento' && i.faturamentoData?' em '+fmtDate(i.faturamentoData):'')+(i.chegada==='chegou' && i.chegadaData?' em '+fmtDate(i.chegadaData):'')+
+            (i.origemSimilarCodigoPrincipal?' · <span class="dr-similar-tag">pedido como similar de '+esc(i.origemSimilarCodigoPrincipal)+'</span>':'')+'</div>'+
         '</div>'+
         '<div class="dr-fields">'+
           '<label>Qtd vendida<input type="number" min="0" step="1" class="desemp-qtd" value="'+(i.vendidoQtd!=null?i.vendidoQtd:'')+'"></label>'+
@@ -1290,6 +1304,7 @@
     var cfg=SCREENS[currentScreen];
     if(!cfg) return items;
     return items.filter(function(i){
+      if(i.origemSimilarId) return false; // cadastro criado pra um similar comprado: não aparece como sugestão própria
       if(cfg.fixedStatus) return i.status===cfg.fixedStatus;
       if(statusTab==='todos') return cfg.allowedStatuses.indexOf(i.status)!==-1;
       return i.status===statusTab;
@@ -1327,6 +1342,7 @@
     var vend=document.getElementById('f-vendedor').value;
     var marca=document.getElementById('f-marca').value;
     return items.filter(function(i){
+      if(i.origemSimilarId) return false; // cadastro criado pra um similar comprado: não aparece como sugestão própria
       if(cfg.fixedStatus){
         if(i.status!==cfg.fixedStatus) return false;
       } else if(statusTab!=='todos'){
@@ -1414,9 +1430,9 @@
     if(ref && ref!=='main'){
       var idx=parseInt(ref.replace('sim',''),10);
       var s=(i.similares||[])[idx];
-      if(s) return {codigo:s.codigo,marca:s.marca,venda:s.venda,qtdMinima:s.qtdMinima};
+      if(s) return {codigo:s.codigo,marca:s.marca,venda:s.venda,custo:s.custo,cadastrado:s.cadastrado,qtdMinima:s.qtdMinima};
     }
-    return {codigo:i.codigo,marca:i.marca,venda:i.venda,qtdMinima:i.qtdMinima};
+    return {codigo:i.codigo,marca:i.marca,venda:i.venda,custo:i.custo,cadastrado:i.cadastrado,qtdMinima:i.qtdMinima};
   }
 
   // Lista de pedidos do item: [{ref, quantidade}, ...]. Convertida a partir dos campos
@@ -1424,7 +1440,7 @@
   function getPedidosSafe(item){
     var base=(item.pedidos && item.pedidos.length) ? item.pedidos :
       ((item.quantidade!=null && item.quantidade!=='') ? [{ref:item.pedirRef||'main',quantidade:item.quantidade}] : []);
-    return base.map(function(p){ return {ref:p.ref||'main',quantidade:(p.quantidade==null||p.quantidade===''?null:p.quantidade),comprado:!!p.comprado,dataCompra:p.dataCompra||null}; });
+    return base.map(function(p){ return {ref:p.ref||'main',quantidade:(p.quantidade==null||p.quantidade===''?null:p.quantidade),comprado:!!p.comprado,dataCompra:p.dataCompra||null,satelliteId:p.satelliteId||null}; });
   }
 
   function pedirOptionsHTML(i,curRef){
@@ -1763,7 +1779,8 @@
   }
 
   // Preencher a data de compra finaliza o item (status='comprado'); apagar a data reabre como 'aprovado'.
-  // "Desfazer compra" (dataCompra=null) reseta TODOS os pedidos do item, não só o status geral.
+  // "Desfazer compra" (dataCompra=null) reseta TODOS os pedidos do item, não só o status geral — e apaga
+  // os cadastros que tinham sido criados pros similares comprados (ver setPedidoCompra).
   function setCompra(id,dataCompra){
     if(!db){ showError('Sem conexão com os dados'); return; }
     var item=items.find(function(x){return x.id===id;});
@@ -1776,18 +1793,31 @@
       patch={status:'aprovado',dataCompra:null,compradoBy:null,compradoByName:null,compradoAt:null};
       patchSimples={status:'aprovado',dataCompra:null};
     }
-    if(item){
-      var arr=getPedidosSafe(item).map(function(p){
-        return {ref:p.ref,quantidade:p.quantidade,comprado:!!dataCompra,dataCompra:dataCompra||null};
+    function gravar(arr){
+      if(arr){ patch.pedidos=arr; patchSimples.pedidos=arr; }
+      db.collection('itens').doc(id).update(patch).catch(function(err){
+        // mesma lógica de fallback do setStatus: garante que a ação principal (marcar compra) não trave.
+        db.collection('itens').doc(id).update(patchSimples).catch(function(err2){
+          showError('Não foi possível salvar a compra',err2,'id='+id);
+        });
       });
-      patch.pedidos=arr; patchSimples.pedidos=arr;
     }
-    db.collection('itens').doc(id).update(patch).catch(function(err){
-      // mesma lógica de fallback do setStatus: garante que a ação principal (marcar compra) não trave.
-      db.collection('itens').doc(id).update(patchSimples).catch(function(err2){
-        showError('Não foi possível salvar a compra',err2,'id='+id);
-      });
-    });
+    if(!item){ gravar(null); return; }
+    var base=getPedidosSafe(item);
+    if(!dataCompra){
+      var idsParaApagar=base.filter(function(p){return p.satelliteId;}).map(function(p){return p.satelliteId;});
+      var novo=base.map(function(p){ return {ref:p.ref,quantidade:p.quantidade,comprado:false,dataCompra:null,satelliteId:null}; });
+      if(idsParaApagar.length){
+        Promise.all(idsParaApagar.map(function(sid){
+          return db.collection('itens').doc(sid).delete().catch(function(){/* segue mesmo se falhar */});
+        })).then(function(){ gravar(novo); });
+      } else {
+        gravar(novo);
+      }
+    } else {
+      var novo2=base.map(function(p){ return {ref:p.ref,quantidade:p.quantidade,comprado:true,dataCompra:dataCompra,satelliteId:p.satelliteId||null}; });
+      gravar(novo2);
+    }
     });
   }
 
@@ -1795,42 +1825,90 @@
   // mexer nos outros pedidos do mesmo item. O item só passa pra 'comprado' de verdade
   // quando todos os pedidos estiverem marcados; enquanto faltar algum, continua em
   // "Aguardando compra" mostrando o que já foi comprado e o que ainda falta.
+  //
+  // Quando o pedido marcado é de um SIMILAR (não o item principal), cria um cadastro próprio
+  // pra ele (com o código/marca/custo do similar) já como 'comprado' — assim ele aparece certinho
+  // em Comprados e no Desempenho (pelo nome e marca reais do que foi comprado), em vez de ficar
+  // "escondido" dentro do item principal. Desfazer apaga esse cadastro de novo.
   function setPedidoCompra(id,idx,dataCompra){
     if(!db){ showError('Sem conexão com os dados'); return; }
     var item=items.find(function(x){return x.id===id;});
     if(!item) return;
     var arr=getPedidosSafe(item);
     if(!arr[idx]) return;
-    if(dataCompra && !(arr[idx].quantidade!=null && arr[idx].quantidade!=='' && Number(arr[idx].quantidade)>0)){
+    var linha=arr[idx];
+    if(dataCompra && !(linha.quantidade!=null && linha.quantidade!=='' && Number(linha.quantidade)>0)){
       showToast('Defina a quantidade desse pedido antes de marcar como comprado.','error');
       return;
     }
+    var ehSimilar=linha.ref && linha.ref!=='main';
     ensureMyId(function(){
-      var novo=arr.map(function(p,i2){
-        if(i2!==idx) return p;
-        return {ref:p.ref,quantidade:p.quantidade,comprado:!!dataCompra,dataCompra:dataCompra||null};
-      });
-      var allDone=novo.length>0 && novo.every(function(p){return p.comprado;});
-      var patch={pedidos:novo};
-      if(allDone){
-        var datas=novo.map(function(p){return p.dataCompra;}).filter(Boolean).sort();
-        patch.status='comprado';
-        patch.dataCompra=datas.length?datas[datas.length-1]:dataCompra;
-        patch.compradoBy=myId||null;
-        patch.compradoByName=myName||null;
-        patch.compradoAt=new Date().toISOString();
-      } else if(item.status==='comprado'){
-        patch.status='aprovado';
-        patch.dataCompra=null;
-        patch.compradoBy=null;
-        patch.compradoByName=null;
-        patch.compradoAt=null;
-      }
-      db.collection('itens').doc(id).update(patch).catch(function(err){
-        db.collection('itens').doc(id).update({pedidos:novo}).catch(function(err2){
-          showError('Não foi possível salvar a compra desse pedido',err2,'id='+id);
+      function aplicar(satelliteId){
+        var novo=arr.map(function(p,i2){
+          if(i2!==idx) return p;
+          return {ref:p.ref,quantidade:p.quantidade,comprado:!!dataCompra,dataCompra:dataCompra||null,satelliteId:satelliteId!==undefined?satelliteId:(p.satelliteId||null)};
         });
-      });
+        var allDone=novo.length>0 && novo.every(function(p){return p.comprado;});
+        var patch={pedidos:novo};
+        if(allDone){
+          var datas=novo.map(function(p){return p.dataCompra;}).filter(Boolean).sort();
+          patch.status='comprado';
+          patch.dataCompra=datas.length?datas[datas.length-1]:dataCompra;
+          patch.compradoBy=myId||null;
+          patch.compradoByName=myName||null;
+          patch.compradoAt=new Date().toISOString();
+        } else if(item.status==='comprado'){
+          patch.status='aprovado';
+          patch.dataCompra=null;
+          patch.compradoBy=null;
+          patch.compradoByName=null;
+          patch.compradoAt=null;
+        }
+        db.collection('itens').doc(id).update(patch).catch(function(err){
+          db.collection('itens').doc(id).update({pedidos:novo}).catch(function(err2){
+            showError('Não foi possível salvar a compra desse pedido',err2,'id='+id);
+          });
+        });
+      }
+
+      if(dataCompra && ehSimilar){
+        var refInfo=resolveRef(item,linha.ref);
+        db.collection('itens').add({
+          codigo:refInfo.codigo||'',
+          marca:refInfo.marca||'',
+          vendedor:item.vendedor||null,
+          custo:refInfo.custo!=null?refInfo.custo:null,
+          venda:refInfo.venda!=null?refInfo.venda:null,
+          cadastrado:!!refInfo.cadastrado,
+          status:'comprado',
+          dataCompra:dataCompra,
+          compradoBy:myId||null,
+          compradoByName:myName||null,
+          compradoAt:new Date().toISOString(),
+          chegada:'aguardando',
+          chegadaData:null,
+          faturamentoData:null,
+          vendidoQtd:null,
+          vendidoData:null,
+          pedidos:[{ref:'main',quantidade:linha.quantidade,comprado:true,dataCompra:dataCompra,satelliteId:null}],
+          dataSugestao:item.dataSugestao||todayISO(),
+          origemSimilarId:id,
+          origemSimilarCodigoPrincipal:item.codigo||null,
+          origemSimilarMarcaPrincipal:item.marca||null,
+          createdAt:new Date().toISOString()
+        }).then(function(docRef){
+          aplicar(docRef.id);
+          showToast((refInfo.codigo||'Similar')+' comprado — já aparece em Desempenho com o código/marca certos.','success');
+        }).catch(function(err){
+          showError('Não foi possível criar o registro desse similar comprado',err);
+        });
+      } else if(!dataCompra && ehSimilar && linha.satelliteId){
+        db.collection('itens').doc(linha.satelliteId).delete().catch(function(){/* segue mesmo se falhar */}).then(function(){
+          aplicar(null);
+        });
+      } else {
+        aplicar(linha.satelliteId||null);
+      }
     });
   }
 
