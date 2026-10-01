@@ -535,6 +535,14 @@
         <input type="file" id="imp-file-backup" accept=".json,application/json" style="display:none">
       </div>
     </div>
+
+    <div class="imp-section">
+      <h2>Corrigir compras antigas de similares</h2>
+      <p>Uso único: procura compras feitas num similar (não no item principal) antes dessa opção existir, e cria o cadastro próprio de cada uma — com código e marca certos — pra aparecerem em Comprados e no Desempenho. Pode rodar mais de uma vez sem duplicar nada.</p>
+      <div class="imp-actions">
+        <button class="btn btn-primary" id="imp-btn-corrigir-similares">Corrigir agora</button>
+      </div>
+    </div>
   </div>
 
 </div>
@@ -2564,6 +2572,77 @@
     restoreBackupFile(file);
     e.target.value='';
   });
+
+  // Uso único: varre os itens já 'comprado' e, pra cada pedido feito num similar (não no
+  // principal) que ainda não tem cadastro próprio, cria esse cadastro agora — mesma lógica
+  // de setPedidoCompra, só que aplicada retroativamente aos que já foram comprados antes
+  // dessa opção existir. Seguro rodar de novo: pedido que já tem satelliteId é ignorado.
+  function corrigirComprasAntigasDeSimilares(){
+    if(!db){ showError('Sem conexão com os dados'); return; }
+    showConfirmDialog('Isso vai procurar compras antigas feitas num similar e criar o cadastro certinho de cada uma, pra aparecerem em Comprados e no Desempenho. Pode rodar quantas vezes quiser, sem duplicar. Continuar?',function(){
+      ensureMyId(function(){
+        db.collection('itens').where('status','==','comprado').get().then(function(snap){
+          var candidatos=[];
+          snap.forEach(function(doc){
+            var item=doc.data(); item.id=doc.id;
+            if(item.origemSimilarId) return; // já é, ele mesmo, um cadastro criado pra um similar
+            var arr=(item.pedidos && item.pedidos.length) ? item.pedidos.slice() :
+              [{ref:item.pedirRef||'main',quantidade:(item.quantidade!=null?item.quantidade:null),comprado:true,dataCompra:item.dataCompra||null,satelliteId:null}];
+            arr.forEach(function(p,idx){
+              var ref=p.ref||'main';
+              if(ref==='main') return;
+              if(p.satelliteId) return;
+              if(p.comprado===false) return;
+              if(p.quantidade==null || p.quantidade==='' || Number(p.quantidade)<=0) return;
+              candidatos.push({itemId:item.id,item:item,idx:idx,arr:arr,p:p});
+            });
+          });
+          if(!candidatos.length){ showToast('Nenhuma compra antiga de similar pra corrigir — já tá tudo certo.','success'); return; }
+          var ok=0, fail=0;
+          function proximo(i){
+            if(i>=candidatos.length){
+              showToast('Corrigido: '+ok+' similar(es) comprado(s) agora '+(ok===1?'tem':'têm')+' cadastro próprio.'+(fail?(' ('+fail+' falharam, tenta de novo)'):''),fail?'error':'success');
+              return;
+            }
+            var c=candidatos[i];
+            var refInfo=resolveRef(c.item,c.p.ref);
+            var dataCompraLinha=c.p.dataCompra||c.item.dataCompra||todayISO();
+            var qtdLinha=c.p.quantidade;
+            db.collection('itens').add({
+              codigo:refInfo.codigo||'',
+              marca:refInfo.marca||'',
+              vendedor:c.item.vendedor||null,
+              custo:refInfo.custo!=null?refInfo.custo:null,
+              venda:refInfo.venda!=null?refInfo.venda:null,
+              cadastrado:!!refInfo.cadastrado,
+              status:'comprado',
+              dataCompra:dataCompraLinha,
+              compradoBy:c.item.compradoBy||null,
+              compradoByName:c.item.compradoByName||null,
+              compradoAt:c.item.compradoAt||new Date().toISOString(),
+              chegada:c.item.chegada||'aguardando',
+              chegadaData:c.item.chegadaData||null,
+              faturamentoData:c.item.faturamentoData||null,
+              vendidoQtd:null,
+              vendidoData:null,
+              pedidos:[{ref:'main',quantidade:qtdLinha,comprado:true,dataCompra:dataCompraLinha,satelliteId:null}],
+              dataSugestao:c.item.dataSugestao||todayISO(),
+              origemSimilarId:c.itemId,
+              origemSimilarCodigoPrincipal:c.item.codigo||null,
+              origemSimilarMarcaPrincipal:c.item.marca||null,
+              createdAt:new Date().toISOString()
+            }).then(function(docRef){
+              c.arr[c.idx]={ref:c.p.ref,quantidade:qtdLinha,comprado:true,dataCompra:dataCompraLinha,satelliteId:docRef.id};
+              return db.collection('itens').doc(c.itemId).update({pedidos:c.arr});
+            }).then(function(){ ok++; proximo(i+1); })
+            .catch(function(){ fail++; proximo(i+1); });
+          }
+          proximo(0);
+        }).catch(function(err){ showError('Não foi possível buscar os itens',err); });
+      });
+    });
+  }
+  document.getElementById('imp-btn-corrigir-similares').addEventListener('click',corrigirComprasAntigasDeSimilares);
 
   // ---- filters ----
   ['f-search','f-vendedor','f-marca'].forEach(function(id){
