@@ -41,4 +41,4 @@ assets/          → logo e ícones das telas
 Cada item (principal ou similar) pode ter uma "quantidade mínima p/ pedido" cadastrada — tanto no formulário manual quanto na planilha de importação. Se alguém tentar pedir uma quantidade menor que a mínima na tela Comprar, o campo fica vermelho, mostra um aviso e a quantidade não é salva até ser corrigida.
 
 
-#Feito por Rayssa💙
+**Feito por Rayssa** 💙
