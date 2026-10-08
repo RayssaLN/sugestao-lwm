@@ -172,6 +172,7 @@
   .desemp-row .dr-main{flex:1;min-width:180px;}
   .desemp-row .dr-main .c{font-family:var(--font-mono);font-weight:600;}
   .desemp-row .dr-meta{font-size:11.5px;color:var(--ink-faint);margin-top:2px;}
+  .dr-similar-badge{background:var(--accent-soft);color:var(--accent);}
   .dr-similar-tag{color:var(--accent);font-weight:600;}
   .desemp-row .dr-fields{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
   .desemp-row .dr-fields label{font-size:11px;color:var(--ink-faint);display:flex;flex-direction:column;gap:2px;}
@@ -228,6 +229,9 @@
   .vc-field input:focus, .vc-field select:focus{border-color:var(--accent);outline:none;}
   .vc-chegada-select.st-faturamento{border-color:#D9A441;color:#D9A441;}
   .vc-chegada-select.st-chegou{border-color:var(--success);color:var(--success);}
+  .vc-vendidos-toggle{display:block;width:100%;text-align:left;margin:14px 0 10px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:10px 14px;font-family:var(--font-sans);font-size:13.5px;font-weight:700;color:var(--success);cursor:pointer;}
+  .vc-vendidos-toggle:hover{border-color:var(--success);}
+  .vc-vendidos-box{opacity:.85;}
   .vc-empty-hint{font-size:11.5px;color:var(--ink-faint);margin:-8px 0 16px;}
 
   .vc-simple-summary{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;}
@@ -617,6 +621,7 @@
   var simRowCount=0;
   var currentScreen='home';
   var activePedirSim=null; // {id, idx} - similar com campo de quantidade aberto no card
+  var vcVendidosAberto=false; // Venda Casada: seção de itens já vendidos recolhida/aberta
   var desempVendedoresExpandido=false; // ranking de vendedores no Desempenho: mostrar só o top 6 ou todos
 
   // Margem padrão por marca (%). Preenche a margem automaticamente ao digitar a marca
@@ -1183,7 +1188,8 @@
     });
 
     // Três estados: vendeu / ainda em faturamento (nem chegou de verdade) / parado no estoque.
-    function vcVendido(i){ return i.vendidoQtd!=null && i.vendidoQtd!=='' && Number(i.vendidoQtd)>0; }
+    // Vendido = tem data da venda preenchida.
+    function vcVendido(i){ return !!i.vendidoData; }
     function vcSituacao(i){
       if(vcVendido(i)) return 'vendido';
       if(i.chegada!=='chegou') return 'faturamento';
@@ -1220,7 +1226,9 @@
     }
     var VC_SIT_LABEL={vendido:'Vendido',faturamento:'Em faturamento',parado:'Parado no estoque'};
     var ordenada=lista.slice().sort(function(a,b){ return (b.dataCompra||'').localeCompare(a.dataCompra||''); });
-    listEl3.innerHTML=ordenada.map(function(i){
+    var naoVendidos=ordenada.filter(function(i){ return !vcVendido(i); });
+    var vendidos=ordenada.filter(function(i){ return vcVendido(i); });
+    function vcCardHTML(i){
       var sit=vcSituacao(i);
       var chegada=i.chegada||'aguardando';
       return '<div class="vc-card" data-id="'+i.id+'">'+
@@ -1244,7 +1252,17 @@
           '<div class="vc-field"><label>Data da venda</label><input type="date" class="vc-data-venda" value="'+(i.vendidoData||'')+'"></div>'+
         '</div>'+
       '</div>';
-    }).join('');
+    }
+    var html3='';
+    if(naoVendidos.length) html3+=naoVendidos.map(vcCardHTML).join('');
+    else html3+='<div class="empty" style="padding:26px 20px;"><b>Tudo vendido</b>Nenhum item pendente de venda nesse período/filtro.</div>';
+    if(vendidos.length){
+      html3+='<button type="button" class="vc-vendidos-toggle" id="vc-vendidos-toggle">'+(vcVendidosAberto?'▾':'▸')+' Vendidos ('+vendidos.length+')</button>';
+      if(vcVendidosAberto) html3+='<div class="vc-vendidos-box">'+vendidos.map(vcCardHTML).join('')+'</div>';
+    }
+    listEl3.innerHTML=html3;
+    var tg=document.getElementById('vc-vendidos-toggle');
+    if(tg) tg.addEventListener('click',function(){ vcVendidosAberto=!vcVendidosAberto; renderVendaCasada(); });
     Array.prototype.forEach.call(listEl3.querySelectorAll('.vc-card'),function(row){
       var id=row.getAttribute('data-id');
       var qtdInput=row.querySelector('.vc-qtd-vendida');
@@ -1312,7 +1330,7 @@
     var cfg=SCREENS[currentScreen];
     if(!cfg) return items;
     return items.filter(function(i){
-      if(i.origemSimilarId) return false; // cadastro criado pra um similar comprado: não aparece como sugestão própria
+      if(i.origemSimilarId && currentScreen!=='comprar') return false; // cadastro de similar comprado: só aparece em Comprar (aba Comprados) e no Desempenho
       if(cfg.fixedStatus) return i.status===cfg.fixedStatus;
       if(statusTab==='todos') return cfg.allowedStatuses.indexOf(i.status)!==-1;
       return i.status===statusTab;
@@ -1350,7 +1368,7 @@
     var vend=document.getElementById('f-vendedor').value;
     var marca=document.getElementById('f-marca').value;
     return items.filter(function(i){
-      if(i.origemSimilarId) return false; // cadastro criado pra um similar comprado: não aparece como sugestão própria
+      if(i.origemSimilarId && currentScreen!=='comprar') return false; // cadastro de similar comprado: só aparece em Comprar (aba Comprados) e no Desempenho
       if(cfg.fixedStatus){
         if(i.status!==cfg.fixedStatus) return false;
       } else if(statusTab!=='todos'){
@@ -1510,6 +1528,7 @@
           '<span class="codigo">'+esc(i.codigo)+'</span>'+
           (i.marca?'<span class="badge badge-marca">'+esc(i.marca)+'</span>':'')+
           '<span class="badge badge-status st-'+i.status+'">'+statusLabel(i.status)+'</span>'+
+          (i.origemSimilarCodigoPrincipal?'<span class="badge dr-similar-badge">pedido como similar de '+esc(i.origemSimilarCodigoPrincipal)+'</span>':'')+
           '<button type="button" class="cad-toggle'+(i.cadastrado?' active':'')+'" data-act="toggle-cadastro" title="Já cadastrado no sistema?">'+(i.cadastrado?'TEM CADASTRO':'Cadastrar')+'</button>'+
         '</div>'+
         '<div class="precos">'+
@@ -1608,7 +1627,9 @@
           } else if(act==='confirm-del'){
             deleteItem(id);
           } else if(act==='desfazer-compra'){
-            setCompra(id,null);
+            var itSat=items.find(function(x){return x.id===id;});
+            if(itSat && itSat.origemSimilarId) desfazerSimilarComprado(itSat);
+            else setCompra(id,null);
           } else if(act==='toggle-cadastro'){
             toggleCadastroMain(id);
           }
@@ -1829,6 +1850,19 @@
     });
   }
 
+  // Desfazer a compra de um cadastro criado pra similar: desfaz a linha correspondente no item de origem
+  // (que apaga este cadastro). Se o item de origem não existir mais, só apaga este cadastro.
+  function desfazerSimilarComprado(sat){
+    if(!db){ showError('Sem conexão com os dados'); return; }
+    var parent=items.find(function(x){return x.id===sat.origemSimilarId;});
+    if(parent){
+      var arr=getPedidosSafe(parent);
+      var idx=arr.findIndex(function(p){return p.satelliteId===sat.id;});
+      if(idx>=0){ setPedidoCompra(parent.id,idx,null); return; }
+    }
+    db.collection('itens').doc(sat.id).delete().catch(function(err){ showError('Não foi possível desfazer',err); });
+  }
+
   // Marca (ou desmarca) a compra de UM pedido específico (principal ou um similar) sem
   // mexer nos outros pedidos do mesmo item. O item só passa pra 'comprado' de verdade
   // quando todos os pedidos estiverem marcados; enquanto faltar algum, continua em
@@ -1842,6 +1876,7 @@
     if(!db){ showError('Sem conexão com os dados'); return; }
     var item=items.find(function(x){return x.id===id;});
     if(!item) return;
+    if(item.origemSimilarId){ if(!dataCompra) desfazerSimilarComprado(item); return; }
     var arr=getPedidosSafe(item);
     if(!arr[idx]) return;
     var linha=arr[idx];
