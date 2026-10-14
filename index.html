@@ -229,6 +229,20 @@
   .vc-field input:focus, .vc-field select:focus{border-color:var(--accent);outline:none;}
   .vc-chegada-select.st-faturamento{border-color:#D9A441;color:#D9A441;}
   .vc-chegada-select.st-chegou{border-color:var(--success);color:var(--success);}
+  .vc-card.vc-compact{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 14px;margin-bottom:8px;}
+  .vc-card.vc-compact .vc-main{flex:1 1 220px;min-width:0;}
+  .vc-card.vc-compact .vc-card-meta{margin-top:3px;}
+  .vc-card.vc-compact .vc-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .vc-card.vc-compact select, .vc-card.vc-compact input[type=date]{font-family:var(--font-sans);font-size:12.5px;background:var(--surface-alt);color:var(--ink);border:1px solid var(--border);border-radius:5px;padding:5px 7px;}
+  .vc-card.vc-compact select:focus, .vc-card.vc-compact input[type=date]:focus{border-color:var(--accent);outline:none;}
+  .vc-vendeu{background:var(--success-bg);color:var(--success);border-color:var(--success);}
+  .vc-sold{opacity:.8;}
+  .vc-check{display:flex;align-items:center;cursor:pointer;}
+  .vc-check input, .vc-selall input{width:17px;height:17px;accent-color:var(--accent);cursor:pointer;}
+  .vc-selall{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink-muted);margin:0 0 8px 2px;cursor:pointer;}
+  .vc-bulkbar{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--accent-soft);border:1px solid var(--accent);border-radius:var(--radius);padding:10px 14px;margin-bottom:10px;font-size:13px;font-weight:600;}
+  .vc-bulkbar input[type=date]{font-family:var(--font-sans);font-size:12.5px;background:var(--surface);color:var(--ink);border:1px solid var(--border);border-radius:5px;padding:5px 7px;}
+  .vc-bulkbar #vc-bulk-count{margin-right:auto;}
   .vc-vendidos-toggle{display:block;width:100%;text-align:left;margin:14px 0 10px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:10px 14px;font-family:var(--font-sans);font-size:13.5px;font-weight:700;color:var(--success);cursor:pointer;}
   .vc-vendidos-toggle:hover{border-color:var(--success);}
   .vc-vendidos-box{opacity:.85;}
@@ -473,8 +487,10 @@
     </div>
 
     <div class="filters">
-      <input type="month" id="vc-mes">
+      <input type="month" id="vc-mes" title="Filtrar por mês da compra (vazio = todos os meses)">
+      <button type="button" class="btn btn-sm btn-ghost" id="vc-mes-limpar">Todos os meses</button>
       <select id="vc-filtro-vendedor"><option value="">Todos os vendedores</option></select>
+      <input type="text" id="vc-busca" placeholder="Buscar por código ou vendedor">
     </div>
     <div id="vc-summary"></div>
     <div id="vc-list"></div>
@@ -621,6 +637,7 @@
   var simRowCount=0;
   var currentScreen='home';
   var activePedirSim=null; // {id, idx} - similar com campo de quantidade aberto no card
+  var vcSelecionados={}; // Venda Casada: itens marcados pra 'marcar como vendidos' em lote
   var vcVendidosAberto=false; // Venda Casada: seção de itens já vendidos recolhida/aberta
   var desempVendedoresExpandido=false; // ranking de vendedores no Desempenho: mostrar só o top 6 ou todos
 
@@ -1066,9 +1083,7 @@
     document.getElementById('desempenho-screen').style.display='none';
     document.getElementById('importacao-screen').style.display='none';
     document.getElementById('vendacasada-screen').style.display='block';
-    if(!document.getElementById('vc-mes').value){
-      document.getElementById('vc-mes').value=todayISO().slice(0,7);
-    }
+    // sem mês pré-selecionado: por padrão mostra os itens de todos os meses (filtrar por mês é opcional)
     document.getElementById('vc-data').value=document.getElementById('vc-data').value||todayISO();
     populateVCVendedorFilter();
     renderVendaCasada();
@@ -1181,9 +1196,14 @@
   function renderVendaCasada(){
     var mes=document.getElementById('vc-mes').value;
     var vendedorFiltro=document.getElementById('vc-filtro-vendedor').value;
+    var busca=(document.getElementById('vc-busca').value||'').trim().toLowerCase();
     var lista=vcItems.filter(function(i){
       if(mes && (!i.dataCompra || i.dataCompra.slice(0,7)!==mes)) return false;
       if(vendedorFiltro && i.vendedor!==vendedorFiltro) return false;
+      if(busca){
+        var alvo=[i.codigo,i.vendedor].filter(Boolean).join(' ').toLowerCase();
+        if(alvo.indexOf(busca)===-1) return false;
+      }
       return true;
     });
 
@@ -1228,61 +1248,132 @@
     var ordenada=lista.slice().sort(function(a,b){ return (b.dataCompra||'').localeCompare(a.dataCompra||''); });
     var naoVendidos=ordenada.filter(function(i){ return !vcVendido(i); });
     var vendidos=ordenada.filter(function(i){ return vcVendido(i); });
+
+    // limpa seleção de itens que não estão mais visíveis como "não vendidos"
+    var idsVisiveis={}; naoVendidos.forEach(function(i){ idsVisiveis[i.id]=true; });
+    Object.keys(vcSelecionados).forEach(function(k){ if(!idsVisiveis[k]) delete vcSelecionados[k]; });
+
     function vcCardHTML(i){
       var sit=vcSituacao(i);
       var chegada=i.chegada||'aguardando';
-      return '<div class="vc-card" data-id="'+i.id+'">'+
-        '<div class="vc-card-top">'+
+      var vend=vcVendido(i);
+      return '<div class="vc-card vc-compact'+(vend?' vc-sold':'')+'" data-id="'+i.id+'">'+
+        (vend?'':'<label class="vc-check"><input type="checkbox" class="vc-sel"'+(vcSelecionados[i.id]?' checked':'')+'></label>')+
+        '<div class="vc-main">'+
           '<div class="vc-card-title">'+
             '<span class="codigo">'+esc(i.codigo)+'</span>'+
             (i.vendedor?'<span class="badge badge-marca">'+esc(i.vendedor)+'</span>':'')+
             '<span class="desemp-status '+sit+'">'+VC_SIT_LABEL[sit]+'</span>'+
           '</div>'+
-          '<button type="button" class="icon-btn vc-del" title="Excluir">🗑</button>'+
+          '<div class="vc-card-meta">comprado em '+fmtDate(i.dataCompra)+' · custo '+fmtMoney(i.custo)+
+            (i.quantidade!=null?' · '+i.quantidade+' pç':'')+
+            (vend?' · vendido em '+fmtDate(i.vendidoData):'')+'</div>'+
         '</div>'+
-        '<div class="vc-card-meta">comprado em '+fmtDate(i.dataCompra)+' · custo '+fmtMoney(i.custo)+
-          (i.quantidade!=null?' · '+i.quantidade+' pç comprada(s)':'')+'</div>'+
-        '<div class="vc-card-fields">'+
-          '<div class="vc-field"><label>Chegada</label><select class="vc-chegada-select st-'+chegada+'">'+
+        '<div class="vc-actions">'+
+          '<select class="vc-chegada-select st-'+chegada+'" title="Chegada">'+
             '<option value="aguardando"'+(chegada==='aguardando'?' selected':'')+'>Aguardando</option>'+
             '<option value="faturamento"'+(chegada==='faturamento'?' selected':'')+'>Em faturamento</option>'+
             '<option value="chegou"'+(chegada==='chegou'?' selected':'')+'>Chegou</option>'+
-          '</select></div>'+
-          '<div class="vc-field"><label>Qtd vendida</label><input type="number" min="0" step="1" class="vc-qtd-vendida" value="'+(i.vendidoQtd!=null?i.vendidoQtd:'')+'"></div>'+
-          '<div class="vc-field"><label>Data da venda</label><input type="date" class="vc-data-venda" value="'+(i.vendidoData||'')+'"></div>'+
+          '</select>'+
+          (vend
+            ? '<button type="button" class="btn btn-sm btn-ghost vc-desfazer">Desfazer</button>'
+            : '<input type="date" class="vc-data-venda" title="Outra data da venda (opcional)">'+
+              '<button type="button" class="btn btn-sm vc-vendeu">✓ Vendeu</button>')+
+          '<button type="button" class="icon-btn vc-del" title="Excluir">🗑</button>'+
         '</div>'+
       '</div>';
     }
+
     var html3='';
-    if(naoVendidos.length) html3+=naoVendidos.map(vcCardHTML).join('');
-    else html3+='<div class="empty" style="padding:26px 20px;"><b>Tudo vendido</b>Nenhum item pendente de venda nesse período/filtro.</div>';
+    if(naoVendidos.length){
+      html3+='<div class="vc-bulkbar" id="vc-bulkbar" style="display:none;">'+
+        '<span id="vc-bulk-count"></span>'+
+        '<input type="date" id="vc-bulk-data" value="'+todayISO()+'">'+
+        '<button type="button" class="btn btn-sm btn-primary" id="vc-bulk-ok">Marcar como vendidos</button>'+
+        '<button type="button" class="btn btn-sm btn-ghost" id="vc-bulk-limpar">Limpar seleção</button>'+
+      '</div>'+
+      '<label class="vc-selall"><input type="checkbox" id="vc-sel-todos"> Selecionar todos ('+naoVendidos.length+')</label>'+
+      naoVendidos.map(vcCardHTML).join('');
+    } else {
+      html3+='<div class="empty" style="padding:26px 20px;"><b>Tudo vendido</b>Nenhum item pendente de venda nesse filtro.</div>';
+    }
     if(vendidos.length){
       html3+='<button type="button" class="vc-vendidos-toggle" id="vc-vendidos-toggle">'+(vcVendidosAberto?'▾':'▸')+' Vendidos ('+vendidos.length+')</button>';
       if(vcVendidosAberto) html3+='<div class="vc-vendidos-box">'+vendidos.map(vcCardHTML).join('')+'</div>';
     }
     listEl3.innerHTML=html3;
+
     var tg=document.getElementById('vc-vendidos-toggle');
     if(tg) tg.addEventListener('click',function(){ vcVendidosAberto=!vcVendidosAberto; renderVendaCasada(); });
+
+    // grava a venda de um item: data (padrão hoje) e quantidade vendida (padrão = quantidade comprada, ou 1)
+    function marcarVendido(item,data){
+      var q=(item.vendidoQtd!=null && item.vendidoQtd!=='' && Number(item.vendidoQtd)>0)?Number(item.vendidoQtd):(Number(item.quantidade)>0?Number(item.quantidade):1);
+      return db.collection('vendaCasada').doc(item.id).update({vendidoData:data||todayISO(),vendidoQtd:q});
+    }
+    function atualizarBulkBar(){
+      var n=Object.keys(vcSelecionados).length;
+      var bar=document.getElementById('vc-bulkbar');
+      if(!bar) return;
+      bar.style.display=n?'flex':'none';
+      document.getElementById('vc-bulk-count').textContent=n+' selecionado'+(n===1?'':'s');
+      var all=document.getElementById('vc-sel-todos');
+      if(all) all.checked=n>0 && n===naoVendidos.length;
+    }
+    atualizarBulkBar();
+
+    var selTodos=document.getElementById('vc-sel-todos');
+    if(selTodos) selTodos.addEventListener('change',function(){
+      vcSelecionados={};
+      if(selTodos.checked) naoVendidos.forEach(function(i){ vcSelecionados[i.id]=true; });
+      Array.prototype.forEach.call(listEl3.querySelectorAll('.vc-sel'),function(cb){ cb.checked=selTodos.checked; });
+      atualizarBulkBar();
+    });
+    var bulkOk=document.getElementById('vc-bulk-ok');
+    if(bulkOk) bulkOk.addEventListener('click',function(){
+      if(!db){ showError('Sem conexão com os dados'); return; }
+      var data=document.getElementById('vc-bulk-data').value||todayISO();
+      var ids=Object.keys(vcSelecionados);
+      var alvos=ids.map(function(id){ return vcItems.find(function(x){return x.id===id;}); }).filter(Boolean);
+      vcSelecionados={};
+      Promise.all(alvos.map(function(it){ return marcarVendido(it,data); })).then(function(){
+        showToast(alvos.length+' item(ns) marcado(s) como vendido(s).','success');
+      }).catch(function(err){ showError('Não foi possível marcar a venda',err); });
+    });
+    var bulkLimpar=document.getElementById('vc-bulk-limpar');
+    if(bulkLimpar) bulkLimpar.addEventListener('click',function(){ vcSelecionados={}; renderVendaCasada(); });
+
     Array.prototype.forEach.call(listEl3.querySelectorAll('.vc-card'),function(row){
       var id=row.getAttribute('data-id');
-      var qtdInput=row.querySelector('.vc-qtd-vendida');
-      var dataInput=row.querySelector('.vc-data-venda');
+      var item=vcItems.find(function(x){return x.id===id;});
       var chegadaSelect=row.querySelector('.vc-chegada-select');
-      function salvar(){
-        if(!db){ showError('Sem conexão com os dados'); return; }
-        var qv=qtdInput.value===''?null:Number(qtdInput.value);
-        db.collection('vendaCasada').doc(id).update({
-          vendidoQtd:qv,
-          vendidoData:dataInput.value||null
-        }).catch(function(err){ showError('Não foi possível salvar a venda',err); });
-      }
-      qtdInput.addEventListener('change',salvar);
-      dataInput.addEventListener('change',salvar);
       chegadaSelect.addEventListener('change',function(){
         if(!db){ showError('Sem conexão com os dados'); return; }
         db.collection('vendaCasada').doc(id).update({chegada:chegadaSelect.value}).catch(function(err){
           showError('Não foi possível salvar a chegada',err);
         });
+      });
+      var cb=row.querySelector('.vc-sel');
+      if(cb) cb.addEventListener('change',function(){
+        if(cb.checked) vcSelecionados[id]=true; else delete vcSelecionados[id];
+        atualizarBulkBar();
+      });
+      var btnVendeu=row.querySelector('.vc-vendeu');
+      if(btnVendeu) btnVendeu.addEventListener('click',function(){
+        if(!db){ showError('Sem conexão com os dados'); return; }
+        var d=row.querySelector('.vc-data-venda').value||todayISO();
+        marcarVendido(item,d).catch(function(err){ showError('Não foi possível marcar a venda',err); });
+      });
+      var dataInput=row.querySelector('.vc-data-venda');
+      if(dataInput) dataInput.addEventListener('change',function(){
+        if(!dataInput.value) return;
+        if(!db){ showError('Sem conexão com os dados'); return; }
+        marcarVendido(item,dataInput.value).catch(function(err){ showError('Não foi possível marcar a venda',err); });
+      });
+      var btnDesfazer=row.querySelector('.vc-desfazer');
+      if(btnDesfazer) btnDesfazer.addEventListener('click',function(){
+        if(!db){ showError('Sem conexão com os dados'); return; }
+        db.collection('vendaCasada').doc(id).update({vendidoData:null,vendidoQtd:null}).catch(function(err){ showError('Não foi possível desfazer',err); });
       });
       row.querySelector('.vc-del').addEventListener('click',function(){ excluirVC(id); });
     });
@@ -1301,6 +1392,8 @@
   document.getElementById('btn-home-vc').addEventListener('click',goHome);
   document.getElementById('nav-vendacasada').addEventListener('click',goVendaCasada);
   document.getElementById('vc-mes').addEventListener('change',renderVendaCasada);
+  document.getElementById('vc-busca').addEventListener('input',renderVendaCasada);
+  document.getElementById('vc-mes-limpar').addEventListener('click',function(){ document.getElementById('vc-mes').value=''; renderVendaCasada(); });
   document.getElementById('vc-filtro-vendedor').addEventListener('change',renderVendaCasada);
 
   function renderTabs(){
