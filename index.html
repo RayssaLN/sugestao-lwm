@@ -456,7 +456,8 @@
       </div>
     </header>
     <div class="filters">
-      <input type="month" id="desemp-mes">
+      <input type="month" id="desemp-mes" title="Filtrar por mês da compra (vazio = todos os meses)">
+      <button type="button" class="btn btn-sm btn-ghost" id="desemp-mes-limpar">Todos os meses</button>
       <select id="desemp-vendedor"><option value="">Todos os vendedores</option></select>
       <select id="desemp-marca"><option value="">Todas as marcas</option></select>
       <input type="text" id="desemp-busca" placeholder="Buscar por código, marca ou vendedor">
@@ -703,7 +704,7 @@
     comprar:{
       heroTitle:'Comprar',
       heroSubtitle:'Confirme a quantidade e registre a data da compra.',
-      tabOptions:[['todos','Todos'],['aprovado','Aguardando compra'],['comprado','Comprados']],
+      tabOptions:[['todos','Todos'],['aprovado','Aguardando compra'],['comprado','Comprados'],['vendido','Vendidos']],
       defaultTab:'aprovado',
       allowedStatuses:['aprovado','comprado'],
       showCreateImport:false,
@@ -879,9 +880,7 @@
     document.getElementById('vendacasada-screen').style.display='none';
     document.getElementById('importacao-screen').style.display='none';
     document.getElementById('desempenho-screen').style.display='block';
-    if(!document.getElementById('desemp-mes').value){
-      document.getElementById('desemp-mes').value=todayISO().slice(0,7);
-    }
+    // sem mês pré-selecionado: mostra todos os meses; filtrar por mês é opcional
     populateDesempVendedorFilter();
     populateDesempMarcaFilter();
     renderDesempenho();
@@ -949,7 +948,7 @@
 
     // Quatro estados: vendeu / em faturamento (marcado que faturou) / parado no estoque
     // (chegou mas não vendeu) / pendente (ainda aguardando, nada marcado).
-    function itemVendido(i){ return i.vendidoQtd!=null && i.vendidoQtd!=='' && Number(i.vendidoQtd)>0; }
+    function itemVendido(i){ return foiVendido(i); }
     function itemSituacao(i){
       if(itemVendido(i)) return 'vendido';
       var cheg=i.chegada||'aguardando';
@@ -1386,6 +1385,7 @@
   document.getElementById('btn-home-desemp').addEventListener('click',goHome);
   document.getElementById('nav-desempenho').addEventListener('click',goDesempenho);
   document.getElementById('desemp-mes').addEventListener('change',renderDesempenho);
+  document.getElementById('desemp-mes-limpar').addEventListener('click',function(){ document.getElementById('desemp-mes').value=''; renderDesempenho(); });
   document.getElementById('desemp-vendedor').addEventListener('change',renderDesempenho);
   document.getElementById('desemp-marca').addEventListener('change',renderDesempenho);
   document.getElementById('desemp-busca').addEventListener('input',renderDesempenho);
@@ -1419,14 +1419,28 @@
 
   // Itens dentro do escopo de status da tela/aba atual (sem aplicar ainda busca/vendedor/marca) —
   // usado pra montar as opções de filtro só com o que faz sentido pra essa tela.
+  // Vendido = tem data da venda ou quantidade vendida preenchida (marcado na tela Desempenho / Venda Casada).
+  function foiVendido(i){
+    return !!i.vendidoData || (i.vendidoQtd!=null && i.vendidoQtd!=='' && Number(i.vendidoQtd)>0);
+  }
+  // Aba atual bate com o item? Na tela Comprar, "Comprados" = comprados que ainda não venderam e
+  // "Vendidos" = comprados que já venderam.
+  function matchTab(i,cfg){
+    if(cfg.fixedStatus) return i.status===cfg.fixedStatus;
+    if(statusTab==='todos') return cfg.allowedStatuses.indexOf(i.status)!==-1;
+    if(currentScreen==='comprar'){
+      if(statusTab==='vendido') return i.status==='comprado' && foiVendido(i);
+      if(statusTab==='comprado') return i.status==='comprado' && !foiVendido(i);
+    }
+    return i.status===statusTab;
+  }
+
   function getStatusScopedItems(){
     var cfg=SCREENS[currentScreen];
     if(!cfg) return items;
     return items.filter(function(i){
       if(i.origemSimilarId && currentScreen!=='comprar') return false; // cadastro de similar comprado: só aparece em Comprar (aba Comprados) e no Desempenho
-      if(cfg.fixedStatus) return i.status===cfg.fixedStatus;
-      if(statusTab==='todos') return cfg.allowedStatuses.indexOf(i.status)!==-1;
-      return i.status===statusTab;
+      return matchTab(i,cfg);
     });
   }
 
@@ -1462,13 +1476,7 @@
     var marca=document.getElementById('f-marca').value;
     return items.filter(function(i){
       if(i.origemSimilarId && currentScreen!=='comprar') return false; // cadastro de similar comprado: só aparece em Comprar (aba Comprados) e no Desempenho
-      if(cfg.fixedStatus){
-        if(i.status!==cfg.fixedStatus) return false;
-      } else if(statusTab!=='todos'){
-        if(i.status!==statusTab) return false;
-      } else {
-        if(cfg.allowedStatuses.indexOf(i.status)===-1) return false;
-      }
+      if(!matchTab(i,cfg)) return false;
       if(vend && i.vendedor!==vend) return false;
       if(marca && i.marca!==marca) return false;
       if(search){
@@ -1610,7 +1618,7 @@
     }
     if(i.status==='comprado'){
       var nmc=i.compradoBy?(i.compradoByName||'alguém'):null;
-      decidedHTML='<span class="decided">Comprado em '+fmtDate(i.dataCompra)+(nmc?' por '+esc(nmc):'')+'</span>';
+      decidedHTML='<span class="decided">Comprado em '+fmtDate(i.dataCompra)+(nmc?' por '+esc(nmc):'')+(i.vendidoData?' · Vendido em '+fmtDate(i.vendidoData):'')+'</span>';
     }
     var isConfirmingDelete = deleteConfirmId===i.id;
     var isComprado = i.status==='comprado';
