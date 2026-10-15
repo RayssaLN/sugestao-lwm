@@ -816,7 +816,7 @@
     var total=itensProprios.length;
     var pend=itensProprios.filter(function(i){return i.status==='pendente';}).length;
     var apr=itensProprios.filter(function(i){return i.status==='aprovado';}).length;
-    var comp=itensProprios.filter(function(i){return i.status==='comprado';}).length;
+    var comp=itensProprios.filter(function(i){return i.status==='comprado' && !representadoPorSimilar(i);}).length;
     var rej=itensProprios.filter(function(i){return i.status==='rejeitado';}).length;
     statsEl.innerHTML=
       statCardHTML(total,'Total','var(--accent)','total')+
@@ -900,6 +900,12 @@
     var arr=i.pedidos;
     if(!arr || !arr.length) return true;
     return arr.some(function(p){ return (p.ref||'main')==='main'; });
+  }
+
+  // Item "comprado" cujo principal nunca foi comprado e cujos similares comprados já têm cadastro próprio.
+  function representadoPorSimilar(i){
+    if(i.origemSimilarId || i.status!=='comprado' || temLinhaPrincipal(i)) return false;
+    return i.pedidos.every(function(p){ return !!p.satelliteId; });
   }
 
   function populateDesempVendedorFilter(){
@@ -1440,6 +1446,9 @@
   // Aba atual bate com o item? Na tela Comprar, "Comprados" = comprados que ainda não venderam e
   // "Vendidos" = comprados que já venderam.
   function matchTab(i,cfg){
+    // Item sugerido que NÃO foi comprado (só o similar foi): quem aparece como comprado é o cadastro do
+    // similar, então o item sugerido some das abas de comprados pra não constar como comprado.
+    if(currentScreen==='comprar' && representadoPorSimilar(i)) return false;
     if(cfg.fixedStatus) return i.status===cfg.fixedStatus;
     if(statusTab==='todos') return cfg.allowedStatuses.indexOf(i.status)!==-1;
     if(currentScreen==='comprar'){
