@@ -173,6 +173,10 @@
   .desemp-row .dr-main .c{font-family:var(--font-mono);font-weight:600;}
   .desemp-row .dr-meta{font-size:11.5px;color:var(--ink-faint);margin-top:2px;}
   .dr-similar-badge{background:var(--accent-soft);color:var(--accent);}
+  .dr-tempo{font-weight:600;color:var(--ink-muted);}
+  .dr-tempo.ok{color:var(--success);}
+  .dr-tempo.warn{color:var(--warning);}
+  .dr-tempo.crit{color:var(--danger);}
   .vendido-pill{display:inline-block;font-size:12px;font-weight:700;color:var(--success);background:var(--success-bg);border:1px solid var(--success);border-radius:999px;padding:3px 11px;white-space:nowrap;}
   .dr-similar-tag{color:var(--accent);font-weight:600;}
   .desemp-row .dr-fields{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
@@ -444,6 +448,11 @@
       <input type="search" id="f-search" placeholder="Buscar por código, descrição ou aplicação...">
       <select id="f-vendedor"><option value="">Todos os vendedores</option></select>
       <select id="f-marca"><option value="">Todas as marcas</option></select>
+    </div>
+    <div class="filters" id="f-comprados-extra" style="display:none;">
+      <select id="f-chegada"><option value="">Chegou e não chegou</option><option value="chegou">Chegou</option><option value="nao">Não chegou</option></select>
+      <input type="month" id="f-mes" title="Filtrar por mês da compra (vazio = todos os meses)">
+      <button type="button" class="btn btn-sm btn-ghost" id="f-mes-limpar">Todos os meses</button>
     </div>
 
     <div id="list-container"></div>
@@ -1054,6 +1063,17 @@
       return;
     }
     var ordenada=lista.slice().sort(function(a,b){ return (b.dataCompra||'').localeCompare(a.dataCompra||''); });
+    function tempoChegouHTML(i){
+      if(i.chegada!=='chegou') return '';
+      if(!i.chegadaData) return ' · <span class="dr-tempo">chegou (sem data)</span>';
+      if(foiVendido(i)){
+        var dv=diasEntre(i.chegadaData,i.vendidoData);
+        return dv==null?'':' · <span class="dr-tempo ok">vendeu '+fmtDias(dv)+' após chegar</span>';
+      }
+      var d=diasEntre(i.chegadaData,todayISO());
+      if(d==null) return '';
+      return ' · <span class="dr-tempo'+(d>=60?' crit':d>=30?' warn':'')+'">sem vender há '+fmtDias(d)+' (desde que chegou em '+fmtDate(i.chegadaData)+')</span>';
+    }
     var SIT_LABEL={vendido:'Vendido',pendente:'Pendente',faturamento:'Em faturamento',parado:'Parado no estoque'};
     listEl2.innerHTML=ordenada.map(function(i){
       var qtdComprada=qtdCompradaDoItem(i);
@@ -1063,6 +1083,7 @@
           '<div class="dr-meta">'+esc(i.vendedor||'—')+' · comprado em '+fmtDate(i.dataCompra)+' · custo '+fmtMoney(i.custo)+
             (qtdComprada!=null?' · '+qtdComprada+' pç pedida(s)':'')+
             ' · '+(vendidoParcial(i)?'Vendeu '+qtdVendida(i)+' de '+qtdCompradaTotal(i)+' pç · ':'')+(foiVendido(i)?'Vendido'+(i.vendidoData?' em '+fmtDate(i.vendidoData):''):chegadaLabel(i.chegada)+(i.chegada==='faturamento' && i.faturamentoData?' em '+fmtDate(i.faturamentoData):'')+(i.chegada==='chegou' && i.chegadaData?' em '+fmtDate(i.chegadaData):''))+
+            tempoChegouHTML(i)+
             (i.origemSimilarCodigoPrincipal?' · <span class="dr-similar-tag">pedido como similar de '+esc(i.origemSimilarCodigoPrincipal)+'</span>':'')+'</div>'+
         '</div>'+
         '<div class="dr-fields">'+
@@ -1504,17 +1525,37 @@
     if(vcDL) vcDL.innerHTML=vendDL.innerHTML;
   }
 
+  // Filtros extras (chegou/não chegou e mês da compra) só valem na tela Comprar, nas abas Comprados e Vendidos.
+  function extraComprados(){
+    return currentScreen==='comprar' && (statusTab==='comprado' || statusTab==='vendido');
+  }
+  function diasEntre(a,b){
+    if(!a||!b) return null;
+    var da=new Date(a+'T00:00:00'), db2=new Date(b+'T00:00:00');
+    var n=Math.round((db2-da)/86400000);
+    return isNaN(n)?null:Math.max(0,n);
+  }
+  function fmtDias(n){ return n===0?'hoje':(n===1?'1 dia':n+' dias'); }
+
   function getFiltered(){
     var cfg=SCREENS[currentScreen];
     if(!cfg) return [];
     var search=document.getElementById('f-search').value.trim().toLowerCase();
     var vend=document.getElementById('f-vendedor').value;
     var marca=document.getElementById('f-marca').value;
+    var extraAtivo=extraComprados();
+    var fChegada=document.getElementById('f-chegada').value;
+    var fMes=document.getElementById('f-mes').value;
     return items.filter(function(i){
       if(i.origemSimilarId && currentScreen!=='comprar') return false; // cadastro de similar comprado: só aparece em Comprar (aba Comprados) e no Desempenho
       if(!matchTab(i,cfg)) return false;
       if(vend && i.vendedor!==vend) return false;
       if(marca && i.marca!==marca) return false;
+      if(extraAtivo){
+        if(fChegada==='chegou' && i.chegada!=='chegou') return false;
+        if(fChegada==='nao' && i.chegada==='chegou') return false;
+        if(fMes && (!i.dataCompra || i.dataCompra.slice(0,7)!==fMes)) return false;
+      }
       if(search){
         var hay=[i.codigo,i.descricao,i.aplicacao].join(' ').toLowerCase();
         if(hay.indexOf(search)===-1) return false;
@@ -1541,6 +1582,8 @@
   }
 
   function renderList(){
+    var extraBox=document.getElementById('f-comprados-extra');
+    if(extraBox) extraBox.style.display=extraComprados()?'flex':'none';
     var filtered=getFiltered().slice().sort(function(a,b){
       var da=a.dataSugestao||'', db_=b.dataSugestao||'';
       if(da!==db_) return da<db_?1:-1;
@@ -2857,7 +2900,8 @@
   document.getElementById('imp-btn-corrigir-similares').addEventListener('click',corrigirComprasAntigasDeSimilares);
 
   // ---- filters ----
-  ['f-search','f-vendedor','f-marca'].forEach(function(id){
+  document.getElementById('f-mes-limpar').addEventListener('click',function(){ document.getElementById('f-mes').value=''; renderList(); });
+  ['f-search','f-vendedor','f-marca','f-chegada','f-mes'].forEach(function(id){
     document.getElementById(id).addEventListener('input',renderList);
     document.getElementById(id).addEventListener('change',renderList);
   });
