@@ -1016,18 +1016,14 @@
 
       var rowsHTML=visivel.map(function(r,idx){
         var pctOk=r.itens?(r.vendidos/r.itens*100):0;
-        var pctPend=r.itens?(r.pendentes/r.itens*100):0;
-        var pctWait=r.itens?(r.faturamento/r.itens*100):0;
-        var pctStuck=r.itens?(r.parados/r.itens*100):0;
+        var pctNao=Math.max(0,100-pctOk);
         var barWidth=(r.itens/maxItens*100);
         return '<div class="vr-row">'+
           '<span class="vr-pos">'+(idx+1)+'º</span>'+
           '<span class="vr-name">'+esc(r.nome)+'</span>'+
           '<span class="vr-bar-wrap"><span class="vr-bar" style="width:'+barWidth+'%">'+
             '<span class="vr-seg vr-seg-ok" style="width:'+pctOk+'%"></span>'+
-            '<span class="vr-seg vr-seg-pending" style="width:'+pctPend+'%"></span>'+
-            '<span class="vr-seg vr-seg-wait" style="width:'+pctWait+'%"></span>'+
-            '<span class="vr-seg vr-seg-stuck" style="width:'+pctStuck+'%"></span>'+
+            '<span class="vr-seg vr-seg-pending" style="width:'+pctNao+'%"></span>'+
           '</span></span>'+
           '<span class="vr-num"><b>'+r.vendidos+' de '+r.itens+'</b> vendidos · '+r.pct+'%</span>'+
         '</div>';
@@ -1039,7 +1035,7 @@
         '<div class="vc-ranking">'+
           '<div class="vc-ranking-head"><h3>Ranking de vendedores</h3>'+
             '<span class="vc-order"><button type="button" class="vc-order-btn'+(desempOrdem!=='conversao'?' active':'')+'" data-ordem="indicacao">Mais indicam</button><button type="button" class="vc-order-btn'+(desempOrdem==='conversao'?' active':'')+'" data-ordem="conversao">Mais vendem do que indicam</button></span>'+
-            '<span class="vc-legend"><i class="vr-dot vr-seg-ok"></i>vendido<i class="vr-dot vr-seg-pending"></i>pendente<i class="vr-dot vr-seg-wait"></i>faturamento<i class="vr-dot vr-seg-stuck"></i>parado</span>'+
+            '<span class="vc-legend"><i class="vr-dot vr-seg-ok"></i>vendido<i class="vr-dot vr-seg-pending"></i>não vendido</span>'+
           '</div>'+
           '<div class="vc-rank-list">'+rowsHTML+'</div>'+
           toggleHTML+
