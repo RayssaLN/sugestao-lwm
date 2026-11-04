@@ -1062,7 +1062,7 @@
         '<div class="dr-main"><span class="c">'+esc(i.codigo)+'</span>'+(i.marca?' · '+esc(i.marca):'')+
           '<div class="dr-meta">'+esc(i.vendedor||'—')+' · comprado em '+fmtDate(i.dataCompra)+' · custo '+fmtMoney(i.custo)+
             (qtdComprada!=null?' · '+qtdComprada+' pç pedida(s)':'')+
-            ' · '+(foiVendido(i)?'Vendido'+(i.vendidoData?' em '+fmtDate(i.vendidoData):''):chegadaLabel(i.chegada)+(i.chegada==='faturamento' && i.faturamentoData?' em '+fmtDate(i.faturamentoData):'')+(i.chegada==='chegou' && i.chegadaData?' em '+fmtDate(i.chegadaData):''))+
+            ' · '+(vendidoParcial(i)?'Vendeu '+qtdVendida(i)+' de '+qtdCompradaTotal(i)+' pç · ':'')+(foiVendido(i)?'Vendido'+(i.vendidoData?' em '+fmtDate(i.vendidoData):''):chegadaLabel(i.chegada)+(i.chegada==='faturamento' && i.faturamentoData?' em '+fmtDate(i.faturamentoData):'')+(i.chegada==='chegou' && i.chegadaData?' em '+fmtDate(i.chegadaData):''))+
             (i.origemSimilarCodigoPrincipal?' · <span class="dr-similar-tag">pedido como similar de '+esc(i.origemSimilarCodigoPrincipal)+'</span>':'')+'</div>'+
         '</div>'+
         '<div class="dr-fields">'+
@@ -1436,9 +1436,26 @@
   // Itens dentro do escopo de status da tela/aba atual (sem aplicar ainda busca/vendedor/marca) —
   // usado pra montar as opções de filtro só com o que faz sentido pra essa tela.
   // Vendido = tem data da venda ou quantidade vendida preenchida (marcado na tela Desempenho / Venda Casada).
-  function foiVendido(i){
-    return !!i.vendidoData || (i.vendidoQtd!=null && i.vendidoQtd!=='' && Number(i.vendidoQtd)>0);
+  // Total de peças compradas do item (soma dos pedidos já marcados como comprados; 0 = desconhecido).
+  function qtdCompradaTotal(i){
+    var t=0;
+    if(i.pedidos && i.pedidos.length){
+      i.pedidos.forEach(function(p){ if(p.comprado!==false) t+=Number(p.quantidade)||0; });
+    }
+    if(!t && Number(i.quantidade)>0) t=Number(i.quantidade);
+    return t;
   }
+  function qtdVendida(i){ return (i.vendidoQtd!=null && i.vendidoQtd!=='' && Number(i.vendidoQtd)>0)?Number(i.vendidoQtd):0; }
+  // Vendido = tem data da venda, ou a quantidade vendida já cobre tudo que foi comprado.
+  // Se só parte foi vendida (ex.: 3 de 10), continua em Comprados até vender tudo.
+  function foiVendido(i){
+    if(i.vendidoData) return true;
+    var v=qtdVendida(i);
+    if(!v) return false;
+    var tot=qtdCompradaTotal(i);
+    return !tot || v>=tot;
+  }
+  function vendidoParcial(i){ return !foiVendido(i) && qtdVendida(i)>0; }
   // Aba atual bate com o item? Na tela Comprar, "Comprados" = comprados que ainda não venderam e
   // "Vendidos" = comprados que já venderam.
   function matchTab(i,cfg){
@@ -1684,6 +1701,13 @@
           (cfg.showCompra && isComprado && foiVendido(i)?
             '<div class="chegada-box"><span class="lbl">Situação</span><span class="vendido-pill">Vendido'+(i.vendidoData?' em '+fmtDate(i.vendidoData):'')+'</span></div>':'')+
           (cfg.showCompra && isComprado && !foiVendido(i)?(function(){
+            var tot=qtdCompradaTotal(i), vq=qtdVendida(i);
+            return '<div class="chegada-box"><span class="lbl">Vendidas'+(tot?' (de '+tot+' pç)':'')+'</span>'+
+              '<input type="number" min="0" step="1"'+(tot?' max="'+tot+'"':'')+' class="venda-qtd" data-id="'+i.id+'" value="'+(vq||'')+'" placeholder="0">'+
+              (tot && vq?'<span class="lbl">faltam '+(tot-vq)+' pç</span>':'')+
+            '</div>';
+          })():'')+
+          (cfg.showCompra && isComprado && !foiVendido(i)?(function(){
             var chegada=i.chegada||'aguardando';
             var dataVal=chegada==='chegou'?(i.chegadaData||''):chegada==='faturamento'?(i.faturamentoData||''):'';
             var dataTitle=chegada==='chegou'?'Dia que chegou':'Dia que faturou';
@@ -1713,6 +1737,9 @@
       (cfg.showFullInfo!==false && i.observacao?'<div class="obs">'+esc(i.observacao)+'</div>':'')+
       '<div class="actions">'+
         (isComprado?
+          (cfg.showCompra?(foiVendido(i)?
+            '<button class="btn btn-sm btn-ghost" data-act="desfazer-venda">Desfazer venda</button>':
+            '<button class="btn btn-sm" style="background:var(--success-bg);color:var(--success)" data-act="vendeu">✓ Vendeu tudo</button>'):'')+
           '<button class="btn btn-sm btn-ghost" data-act="desfazer-compra">Desfazer compra</button>'
           : cfg.showDecisionActions?
           '<button class="btn btn-sm" style="background:var(--success-bg);color:var(--success)" data-act="aprovado">Aprovar</button>'+
@@ -1748,6 +1775,16 @@
             renderList();
           } else if(act==='confirm-del'){
             deleteItem(id);
+          } else if(act==='vendeu' || act==='desfazer-venda'){
+            if(!db){ showError('Sem conexão com os dados'); return; }
+            var itV=items.find(function(x){return x.id===id;});
+            var patchV;
+            if(act==='vendeu'){
+              var qv=(itV && Number(itV.vendidoQtd)>0)?Number(itV.vendidoQtd):null;
+              qv=itV?qtdCompradaTotal(itV):0;
+              patchV={vendidoData:todayISO(),vendidoQtd:qv||1};
+            } else patchV={vendidoData:null,vendidoQtd:null};
+            db.collection('itens').doc(id).update(patchV).catch(function(err){ showError('Não foi possível salvar a venda',err); });
           } else if(act==='desfazer-compra'){
             var itSat=items.find(function(x){return x.id===id;});
             if(itSat && itSat.origemSimilarId) desfazerSimilarComprado(itSat);
@@ -1850,6 +1887,24 @@
             var idx=Number(btn.getAttribute('data-idx'));
             setPedidoCompra(id,idx,null);
           });
+        });
+      }
+      var vendaQtd=card.querySelector('.venda-qtd');
+      if(vendaQtd){
+        vendaQtd.addEventListener('change',function(){
+          if(!db){ showError('Sem conexão com os dados'); return; }
+          var it=items.find(function(x){return x.id===id;});
+          var v=vendaQtd.value===''?0:Math.max(0,Math.floor(Number(vendaQtd.value)||0));
+          var tot=it?qtdCompradaTotal(it):0;
+          if(tot && v>tot) v=tot;
+          var completo=v>0 && (!tot || v>=tot);
+          db.collection('itens').doc(id).update({
+            vendidoQtd:v>0?v:null,
+            vendidoData:completo?((it&&it.vendidoData)||todayISO()):null
+          }).then(function(){
+            if(completo) showToast('Vendeu tudo — o item foi pra aba Vendidos.','success');
+            else if(v>0) showToast('Vendidas '+v+(tot?' de '+tot:'')+' pç — continua em Comprados até vender tudo.','success');
+          }).catch(function(err){ showError('Não foi possível salvar a venda',err); });
         });
       }
       var chegadaSelect=card.querySelector('.chegada-select');
